@@ -118,11 +118,10 @@ public partial class Player : CharacterBody3D
     // Portée d'interaction — distance max pour casser/poser des blocs
     private float _interactionRange = 5.0f;
 
-    // Hauteur maximale qu'on peut monter sans sauter (demi-bloc = 0.5)
-    private float _maxStepHeight = 0.55f;
-
-    // Hauteur du raycast pour détecter les blocs pleins
-    private float _stepCheckHeight = 0.9f;
+    // Step climbing - hauteurs des raycasts et impulsion
+    private float _stepCheckLow = 0.4f;    // Raycast bas (détecte obstacle)
+    private float _stepCheckHigh = 0.9f;   // Raycast haut (détecte bloc plein)
+    private float _stepImpulse = 5.0f;     // Force du mini-saut
 
     // ------------------------------------------------------------------------
     // SURBRILLANCE DU BLOC VISÉ
@@ -442,7 +441,7 @@ public partial class Player : CharacterBody3D
 
         
             var spaceState = GetWorld3D().DirectSpaceState;
-            var from = GlobalPosition + new Vector3(0, 0.4f, 0);
+            var from = GlobalPosition + new Vector3(0, _stepCheckLow, 0);
             var to = from + direction * 0.5f;
             var query = PhysicsRayQueryParameters3D.Create(from, to);
             query.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
@@ -451,7 +450,7 @@ public partial class Player : CharacterBody3D
             if (result.Count > 0)
             {
                 GD.Print("Obstacle détecté");
-                from = GlobalPosition + new Vector3(0, 0.9f, 0);
+                from = GlobalPosition + new Vector3(0, _stepCheckHigh, 0);
                 to = from + direction * 0.5f;
                 query = PhysicsRayQueryParameters3D.Create(from, to);
                 query.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
@@ -460,7 +459,7 @@ public partial class Player : CharacterBody3D
                 if (result.Count == 0)
                 {
                     GD.Print("Espace libre, on monte !");
-                    Velocity = new Vector3(Velocity.X, 5.0f, Velocity.Z);
+                    Velocity = new Vector3(Velocity.X, _stepImpulse, Velocity.Z);
                 }
             }
         }
