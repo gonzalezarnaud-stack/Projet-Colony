@@ -162,22 +162,6 @@ public static class BlockRenderer
         // TODO : Adapter la collision à la forme du bloc (pente, demi-bloc)
         
         var collisionShape = new CollisionShape3D();
-        
-        if (shapeId == Shapes.Demi)
-        {
-            collisionShape = new CollisionShape3D();  // Le conteneur
-
-            var boxShape = new BoxShape3D();               // Le cube (séparé)
-            boxShape.Size = new Vector3(1.0f, 0.5f, 1.0f); // On change SA taille
-
-            collisionShape.Shape = boxShape;               // On met le cube dans le conteneur
-            collisionShape.Position = new Vector3(0, -0.25f, 0);  // On décale le conteneur
-        }
-        else
-        {
-            collisionShape = new CollisionShape3D();
-            collisionShape.Shape = new BoxShape3D();
-        }
 
         if (shapeId == Shapes.Demi)
         {
@@ -190,11 +174,22 @@ public static class BlockRenderer
         {
             collisionShape.Shape = CreateSlopeCollider();
         }
+        else if (shapeId == Shapes.DemiSlope)
+        {
+            collisionShape.Shape = CreateDemiSlopeCollider();
+        }
+        else if (shapeId == Shapes.Post)
+        {
+            var boxShape = new BoxShape3D();
+            boxShape.Size = new Vector3(0.25f, 1.0f, 0.25f);
+            collisionShape.Shape = boxShape;
+        }
         else
         {
             collisionShape.Shape = new BoxShape3D();
         }
 
+        
         // --------------------------------------------------------------------
         // ASSEMBLAGE — Hiérarchie de nodes
         // --------------------------------------------------------------------
@@ -345,6 +340,23 @@ public static class BlockRenderer
             new Vector3(-0.50f, -0.5f,  0.50f),  // 3 : bas avant gauche
             new Vector3(-0.50f,  0.5f, -0.50f),  // 4 : haut arrière gauche
             new Vector3( 0.50f,  0.5f, -0.50f),  // 5 : haut arrière droit
+        };
+
+        var shape = new ConvexPolygonShape3D();
+        shape.Points = points;
+        return shape;
+    }
+
+    private static ConvexPolygonShape3D CreateDemiSlopeCollider()
+    {
+        Vector3[] points = new Vector3[]
+        {
+            new Vector3(-0.5f, -0.5f, -0.5f),  // 0 : bas arrière gauche
+            new Vector3( 0.5f, -0.5f, -0.5f),  // 1 : bas arrière droit
+            new Vector3( 0.5f, -0.5f,  0.5f),  // 2 : bas avant droit
+            new Vector3(-0.5f, -0.5f,  0.5f),  // 3 : bas avant gauche
+            new Vector3(-0.5f,  0.0f, -0.5f),  // 4 : haut arrière gauche (Y=0)
+            new Vector3( 0.5f,  0.0f, -0.5f),  // 5 : haut arrière droit (Y=0)
         };
 
         var shape = new ConvexPolygonShape3D();
