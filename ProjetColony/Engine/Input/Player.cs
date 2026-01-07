@@ -34,6 +34,9 @@ using ProjetColony.Core.Data;
 using ProjetColony.Engine.Rendering;
 using ProjetColony.Engine.UI;
 using ProjetColony.Scenes;
+using System.Security.Cryptography.X509Certificates;
+using System.Runtime.CompilerServices;
+using System.Linq;
 
 namespace ProjetColony.Engine.Input;
 
@@ -114,6 +117,12 @@ public partial class Player : CharacterBody3D
 
     // Portée d'interaction — distance max pour casser/poser des blocs
     private float _interactionRange = 5.0f;
+
+    // Hauteur maximale qu'on peut monter sans sauter (demi-bloc = 0.5)
+    private float _maxStepHeight = 0.55f;
+
+    // Hauteur du raycast pour détecter les blocs pleins
+    private float _stepCheckHeight = 0.9f;
 
     // ------------------------------------------------------------------------
     // SURBRILLANCE DU BLOC VISÉ
@@ -417,7 +426,44 @@ public partial class Player : CharacterBody3D
         // MoveAndSlide() utilise Velocity et ajuste le mouvement
         // pour glisser le long des surfaces au lieu de s'arrêter net
         MoveAndSlide();
+        TryStepUp();
     }
+
+        private void TryStepUp()
+        {
+            // Seulement si on est au sol et on se déplace
+            if (!IsOnFloor()) return;
+            var inputZ = Godot.Input.IsKeyPressed(_keyForward) ? 1 : (Godot.Input.IsKeyPressed(_keyBackward) ? -1 : 0);
+            var inputX = Godot.Input.IsKeyPressed(_keyRight) ? 1 : (Godot.Input.IsKeyPressed(_keyLeft) ? -1 : 0);
+            if (inputX == 0 && inputZ == 0) return;
+
+            var direction = -Transform.Basis.Z * inputZ + Transform.Basis.X * inputX;
+            direction = direction.Normalized();
+
+        
+            var spaceState = GetWorld3D().DirectSpaceState;
+            var from = GlobalPosition + new Vector3(0, 0.4f, 0);
+            var to = from + direction * 0.5f;
+            var query = PhysicsRayQueryParameters3D.Create(from, to);
+            query.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
+            var result = spaceState.IntersectRay(query);
+
+            if (result.Count > 0)
+            {
+                GD.Print("Obstacle détecté");
+                from = GlobalPosition + new Vector3(0, 0.9f, 0);
+                to = from + direction * 0.5f;
+                query = PhysicsRayQueryParameters3D.Create(from, to);
+                query.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
+                result = spaceState.IntersectRay(query);
+            
+                if (result.Count == 0)
+                {
+                    GD.Print("Espace libre, on monte !");
+                    Velocity = new Vector3(Velocity.X, 5.0f, Velocity.Z);
+                }
+            }
+        }
 
     // ========================================================================
     // GETINPUTAXIS — Helper pour lire deux touches opposées

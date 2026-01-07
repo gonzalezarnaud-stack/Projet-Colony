@@ -160,8 +160,24 @@ public static class BlockRenderer
         // Sans collision, le joueur traverserait les blocs !
         //
         // TODO : Adapter la collision à la forme du bloc (pente, demi-bloc)
+        
         var collisionShape = new CollisionShape3D();
-        collisionShape.Shape = new BoxShape3D();
+        
+        if (shapeId == Shapes.Demi)
+        {
+            collisionShape = new CollisionShape3D();  // Le conteneur
+
+            var boxShape = new BoxShape3D();               // Le cube (séparé)
+            boxShape.Size = new Vector3(1.0f, 0.5f, 1.0f); // On change SA taille
+
+            collisionShape.Shape = boxShape;               // On met le cube dans le conteneur
+            collisionShape.Position = new Vector3(0, -0.25f, 0);  // On décale le conteneur
+        }
+        else
+        {
+            collisionShape = new CollisionShape3D();
+            collisionShape.Shape = new BoxShape3D();
+        }
 
         // --------------------------------------------------------------------
         // ASSEMBLAGE — Hiérarchie de nodes
