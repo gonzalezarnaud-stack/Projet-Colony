@@ -150,6 +150,8 @@ public partial class Player : CharacterBody3D
         // avant Main (ordre d'initialisation de Godot).
         _blockHighLight = new BlockHighLight();
         AddChild(_blockHighLight);
+
+        FloorMaxAngle = Mathf.DegToRad(50);
     }
 
     // ========================================================================
@@ -436,6 +438,10 @@ public partial class Player : CharacterBody3D
             var inputX = Godot.Input.IsKeyPressed(_keyRight) ? 1 : (Godot.Input.IsKeyPressed(_keyLeft) ? -1 : 0);
             if (inputX == 0 && inputZ == 0) return;
 
+            // Pas de step climbing sur les pentes
+            var floorNormal = GetFloorNormal();
+            if (floorNormal.Y < 0.95f) return;
+
             var direction = -Transform.Basis.Z * inputZ + Transform.Basis.X * inputX;
             direction = direction.Normalized();
 
@@ -449,7 +455,6 @@ public partial class Player : CharacterBody3D
 
             if (result.Count > 0)
             {
-                GD.Print("Obstacle détecté");
                 from = GlobalPosition + new Vector3(0, _stepCheckHigh, 0);
                 to = from + direction * 0.5f;
                 query = PhysicsRayQueryParameters3D.Create(from, to);
@@ -458,7 +463,6 @@ public partial class Player : CharacterBody3D
             
                 if (result.Count == 0)
                 {
-                    GD.Print("Espace libre, on monte !");
                     Velocity = new Vector3(Velocity.X, _stepImpulse, Velocity.Z);
                 }
             }

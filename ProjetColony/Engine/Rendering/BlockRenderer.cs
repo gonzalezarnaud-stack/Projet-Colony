@@ -179,6 +179,22 @@ public static class BlockRenderer
             collisionShape.Shape = new BoxShape3D();
         }
 
+        if (shapeId == Shapes.Demi)
+        {
+            var boxShape = new BoxShape3D();
+            boxShape.Size = new Vector3(1.0f, 0.5f, 1.0f);
+            collisionShape.Shape = boxShape;
+            collisionShape.Position = new Vector3(0, -0.25f, 0);
+        }
+        else if (shapeId == Shapes.FullSlope)
+        {
+            collisionShape.Shape = CreateSlopeCollider();
+        }
+        else
+        {
+            collisionShape.Shape = new BoxShape3D();
+        }
+
         // --------------------------------------------------------------------
         // ASSEMBLAGE — Hiérarchie de nodes
         // --------------------------------------------------------------------
@@ -316,5 +332,23 @@ public static class BlockRenderer
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 
         return mesh;
+    }
+
+    private static ConvexPolygonShape3D CreateSlopeCollider()
+    {
+        // Mêmes vertices que le mesh de la pente
+        Vector3[] points = new Vector3[]
+        {
+            new Vector3(-0.50f, -0.5f, -0.50f),  // 0 : bas arrière gauche
+            new Vector3( 0.50f, -0.5f, -0.50f),  // 1 : bas arrière droit
+            new Vector3( 0.50f, -0.5f,  0.50f),  // 2 : bas avant droit
+            new Vector3(-0.50f, -0.5f,  0.50f),  // 3 : bas avant gauche
+            new Vector3(-0.50f,  0.5f, -0.50f),  // 4 : haut arrière gauche
+            new Vector3( 0.50f,  0.5f, -0.50f),  // 5 : haut arrière droit
+        };
+
+        var shape = new ConvexPolygonShape3D();
+        shape.Points = points;
+        return shape;
     }
 }
