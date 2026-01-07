@@ -1,0 +1,30 @@
+[gd_scene load_steps=3 format=3 uid="uid://c010h1jwhp28v"]
+
+[ext_resource type="Script" uid="uid://bholpneewf7a0" path="res://Engine/Input/Player.cs" id="1_rpqav"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_rpqav"]
+radius = 0.3
+height = 1.2
+
+[node name="Player" type="CharacterBody3D"]
+script = ExtResource("1_rpqav")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("CapsuleShape3D_rpqav")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="CanvasLayer/CenterContainer"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
