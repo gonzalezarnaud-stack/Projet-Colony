@@ -57,6 +57,39 @@ public partial class Player : CharacterBody3D
     private float _gravity = 20.0f;
 
     // ========================================================================
+    // CONFIGURATION DU STEP CLIMBING
+    // ========================================================================
+    // Le "step climbing" permet de monter automatiquement sur les petits
+    // obstacles (demi-blocs) sans avoir à sauter manuellement.
+    //
+    // POURQUOI C'EST NÉCESSAIRE ?
+    // Quand le joueur est bloqué contre un mur, sa vélocité horizontale = 0.
+    // Impossible de détecter qu'il "veut avancer" en regardant la vélocité.
+    // On vérifie donc directement si les touches de déplacement sont pressées.
+    //
+    // COMMENT ÇA MARCHE ?
+    // On lance deux raycasts horizontaux devant le joueur :
+    //   1. Raycast BAS (à _stepCheckLow) → détecte s'il y a un obstacle
+    //   2. Raycast HAUT (à _stepCheckHigh) → vérifie si c'est un bloc plein
+    //
+    // Si obstacle en bas MAIS rien en haut → c'est un demi-bloc → mini-saut !
+    // Si obstacle en bas ET en haut → c'est un mur complet → on ne fait rien.
+
+    // Hauteur du raycast bas (en mètres depuis les pieds du joueur)
+    // 0.4m = à mi-hauteur d'un demi-bloc (qui fait 0.5m)
+    // Trop bas (0.1m) → déclenchait sur le sol plat (bug de sautillement)
+    private float _stepCheckLow = 0.4f;
+
+    // Hauteur du raycast haut (en mètres depuis les pieds du joueur)
+    // 0.9m = juste sous la hauteur d'un bloc plein (1m)
+    // Si ce raycast touche quelque chose, c'est un mur → pas de step climbing
+    private float _stepCheckHigh = 0.9f;
+
+    // Force de l'impulsion verticale pour monter le demi-bloc
+    // C'est une vélocité Y, pas une hauteur. 5.0 suffit pour 0.5m.
+    private float _stepImpulse = 5.0f;
+
+    // ========================================================================
     // CONFIGURATION DE LA SOURIS
     // ========================================================================
     
@@ -118,11 +151,6 @@ public partial class Player : CharacterBody3D
     // Portée d'interaction — distance max pour casser/poser des blocs
     private float _interactionRange = 5.0f;
 
-    // Step climbing - hauteurs des raycasts et impulsion
-    private float _stepCheckLow = 0.4f;    // Raycast bas (détecte obstacle)
-    private float _stepCheckHigh = 0.9f;   // Raycast haut (détecte bloc plein)
-    private float _stepImpulse = 5.0f;     // Force du mini-saut
-
     // ------------------------------------------------------------------------
     // SURBRILLANCE DU BLOC VISÉ
     // ------------------------------------------------------------------------
@@ -151,6 +179,19 @@ public partial class Player : CharacterBody3D
         _blockHighLight = new BlockHighLight();
         AddChild(_blockHighLight);
 
+        // --------------------------------------------------------------------
+        // ANGLE MAXIMUM POUR MARCHER SUR UNE PENTE
+        // --------------------------------------------------------------------
+        // FloorMaxAngle définit l'inclinaison maximale que Godot considère
+        // comme "sol" (où IsOnFloor() retourne true).
+        //
+        // Par défaut : 45° — trop faible pour nos pentes !
+        // Une FullSlope fait 45° exactement, donc le joueur glissait parfois.
+        // 
+        // À 50°, on a une marge de sécurité et le joueur marche sans problème
+        // sur les FullSlope (45°) et DemiSlope (~26°).
+        //
+        // Note : DegToRad convertit les degrés en radians (Godot utilise les radians).
         FloorMaxAngle = Mathf.DegToRad(50);
     }
 
@@ -430,43 +471,102 @@ public partial class Player : CharacterBody3D
         TryStepUp();
     }
 
-        private void TryStepUp()
+    // ========================================================================
+    // TRYSTEPUP — Monte automatiquement les petits obstacles
+    // ========================================================================
+    // Appelée à chaque frame physique après MoveAndSlide().
+    // Détecte si le joueur est bloqué par un demi-bloc et le fait monter.
+    //
+    // ALGORITHME :
+    // 1. Vérifier qu'on est au sol et qu'on essaie de bouger
+    // 2. Vérifier qu'on n'est pas sur une pente (sinon ça interfère)
+    // 3. Raycast bas : y a-t-il un obstacle devant ?
+    // 4. Si oui, raycast haut : est-ce un bloc plein ou un demi-bloc ?
+    // 5. Si demi-bloc (rien en haut) → impulsion verticale
+    //
+    // POURQUOI VÉRIFIER LES TOUCHES ET PAS LA VÉLOCITÉ ?
+    // Quand on est contre un mur, Velocity.X et Velocity.Z sont à 0
+    // (MoveAndSlide les annule). On ne saurait pas que le joueur pousse.
+    // En vérifiant les touches, on sait qu'il VEUT avancer.
+    private void TryStepUp()
+    {
+        // ----------------------------------------------------------------
+        // CONDITION 1 : Être au sol
+        // ----------------------------------------------------------------
+        // Pas de step climbing en l'air (on ne vole pas !)
+        if (!IsOnFloor()) return;
+    
+        // ----------------------------------------------------------------
+        // CONDITION 2 : Le joueur essaie de se déplacer
+        // ----------------------------------------------------------------
+        // On lit directement les touches au lieu de regarder Velocity.
+        // L'opérateur ternaire "condition ? siVrai : siFaux" remplace un if/else.
+        // Résultat : -1, 0, ou 1 pour chaque axe.
+        var inputZ = Godot.Input.IsKeyPressed(_keyForward) ? 1 : (Godot.Input.IsKeyPressed(_keyBackward) ? -1 : 0);
+        var inputX = Godot.Input.IsKeyPressed(_keyRight) ? 1 : (Godot.Input.IsKeyPressed(_keyLeft) ? -1 : 0);
+    
+        // Si aucune touche de déplacement → rien à faire
+        if (inputX == 0 && inputZ == 0) return;
+
+        // ----------------------------------------------------------------
+        // CONDITION 3 : Ne pas être sur une pente
+        // ----------------------------------------------------------------
+        // GetFloorNormal() retourne la direction perpendiculaire au sol.
+        // Sol plat → normale = (0, 1, 0) → normale.Y = 1.0
+        // Pente 45° → normale.Y ≈ 0.707
+        //
+        // Si normale.Y < 0.95, on est sur une pente → pas de step climbing
+        // (sinon on sauterait bizarrement en montant une rampe)
+        var floorNormal = GetFloorNormal();
+        if (floorNormal.Y < 0.95f) return;
+
+        // ----------------------------------------------------------------
+        // CALCUL DE LA DIRECTION DE DÉPLACEMENT
+        // ----------------------------------------------------------------
+        // Combine les entrées avec les axes locaux du joueur.
+        // -Transform.Basis.Z = devant, Transform.Basis.X = droite
+        // Normalized() pour que la diagonale ne soit pas plus longue.
+        var direction = -Transform.Basis.Z * inputZ + Transform.Basis.X * inputX;
+        direction = direction.Normalized();
+
+        // ----------------------------------------------------------------
+        // RAYCAST BAS : Y a-t-il un obstacle ?
+        // ----------------------------------------------------------------
+        // On lance un rayon horizontal depuis les pieds + _stepCheckLow
+        // vers l'avant sur 0.5m (demi-bloc de distance).
+        var spaceState = GetWorld3D().DirectSpaceState;
+        var from = GlobalPosition + new Vector3(0, _stepCheckLow, 0);
+        var to = from + direction * 0.5f;
+        var query = PhysicsRayQueryParameters3D.Create(from, to);
+    
+        // IMPORTANT : Exclure notre propre collider du raycast
+        // Sinon le rayon touche le joueur lui-même !
+        query.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
+        var result = spaceState.IntersectRay(query);
+
+        // Si le raycast bas touche quelque chose → obstacle détecté
+        if (result.Count > 0)
         {
-            // Seulement si on est au sol et on se déplace
-            if (!IsOnFloor()) return;
-            var inputZ = Godot.Input.IsKeyPressed(_keyForward) ? 1 : (Godot.Input.IsKeyPressed(_keyBackward) ? -1 : 0);
-            var inputX = Godot.Input.IsKeyPressed(_keyRight) ? 1 : (Godot.Input.IsKeyPressed(_keyLeft) ? -1 : 0);
-            if (inputX == 0 && inputZ == 0) return;
-
-            // Pas de step climbing sur les pentes
-            var floorNormal = GetFloorNormal();
-            if (floorNormal.Y < 0.95f) return;
-
-            var direction = -Transform.Basis.Z * inputZ + Transform.Basis.X * inputX;
-            direction = direction.Normalized();
-
-        
-            var spaceState = GetWorld3D().DirectSpaceState;
-            var from = GlobalPosition + new Vector3(0, _stepCheckLow, 0);
-            var to = from + direction * 0.5f;
-            var query = PhysicsRayQueryParameters3D.Create(from, to);
+            // ------------------------------------------------------------
+            // RAYCAST HAUT : Est-ce un bloc plein ou un demi-bloc ?
+            // ------------------------------------------------------------
+            // Même rayon mais plus haut (_stepCheckHigh).
+            // Si ce rayon touche aussi → bloc plein → on ne monte pas.
+            // Si ce rayon ne touche rien → demi-bloc → on peut monter !
+            from = GlobalPosition + new Vector3(0, _stepCheckHigh, 0);
+            to = from + direction * 0.5f;
+            query = PhysicsRayQueryParameters3D.Create(from, to);
             query.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
-            var result = spaceState.IntersectRay(query);
-
-            if (result.Count > 0)
+            result = spaceState.IntersectRay(query);
+    
+            // Rien en haut → c'est un demi-bloc → MINI-SAUT !
+            if (result.Count == 0)
             {
-                from = GlobalPosition + new Vector3(0, _stepCheckHigh, 0);
-                to = from + direction * 0.5f;
-                query = PhysicsRayQueryParameters3D.Create(from, to);
-                query.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
-                result = spaceState.IntersectRay(query);
-            
-                if (result.Count == 0)
-                {
-                    Velocity = new Vector3(Velocity.X, _stepImpulse, Velocity.Z);
-                }
+                // On garde la vélocité horizontale et on ajoute une impulsion Y
+                Velocity = new Vector3(Velocity.X, _stepImpulse, Velocity.Z);
             }
         }
+    }
 
     // ========================================================================
     // GETINPUTAXIS — Helper pour lire deux touches opposées

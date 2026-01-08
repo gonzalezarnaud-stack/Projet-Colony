@@ -329,9 +329,27 @@ public static class BlockRenderer
         return mesh;
     }
 
+    // ========================================================================
+    // CREATESLOPECOLLIDER — Crée la forme de collision pour une pente
+    // ========================================================================
+    // Pour que le joueur puisse MARCHER sur une pente (pas juste la voir),
+    // il faut une collision qui épouse la forme triangulaire.
+    //
+    // POURQUOI PAS UN BOXSHAPE3D ?
+    // BoxShape3D = cube. Si on l'utilise pour une pente, le joueur se cogne
+    // contre un mur invisible ou flotte au-dessus de la surface.
+    //
+    // SOLUTION : ConvexPolygonShape3D
+    // C'est une forme de collision définie par des points (vertices).
+    // Godot calcule automatiquement l'enveloppe convexe (la "coque" qui
+    // englobe tous les points). Parfait pour nos formes simples !
+    //
+    // Les points sont les mêmes que le mesh visuel (CreateSlopeMesh).
+    // Ainsi, la collision correspond exactement à ce qu'on voit.
     private static ConvexPolygonShape3D CreateSlopeCollider()
     {
-        // Mêmes vertices que le mesh de la pente
+        // Les 6 sommets de la pente (même chose que le mesh)
+        // Pas de sommets "haut avant" — c'est là que la pente descend
         Vector3[] points = new Vector3[]
         {
             new Vector3(-0.50f, -0.5f, -0.50f),  // 0 : bas arrière gauche
@@ -342,21 +360,35 @@ public static class BlockRenderer
             new Vector3( 0.50f,  0.5f, -0.50f),  // 5 : haut arrière droit
         };
 
+        // Crée la forme et lui donne les points
+        // Godot calcule l'enveloppe convexe automatiquement
         var shape = new ConvexPolygonShape3D();
         shape.Points = points;
         return shape;
     }
 
+    // ========================================================================
+    // CREATEDEMISLOPECOLLIDER — Collision pour une demi-pente
+    // ========================================================================
+    // Même principe que CreateSlopeCollider, mais moitié moins haute.
+    //
+    // DIFFÉRENCE AVEC FULLSLOPE :
+    // - FullSlope : sommets hauts à Y = +0.5 (pente de 1 bloc de haut)
+    // - DemiSlope : sommets hauts à Y = 0.0 (pente de 0.5 bloc de haut)
+    //
+    // Cela donne une pente plus douce (~26° au lieu de 45°).
+    // Utile pour des rampes d'accès ou des transitions subtiles.
     private static ConvexPolygonShape3D CreateDemiSlopeCollider()
     {
+        // Les 6 sommets — noter que Y max = 0.0 (pas 0.5)
         Vector3[] points = new Vector3[]
         {
             new Vector3(-0.5f, -0.5f, -0.5f),  // 0 : bas arrière gauche
             new Vector3( 0.5f, -0.5f, -0.5f),  // 1 : bas arrière droit
             new Vector3( 0.5f, -0.5f,  0.5f),  // 2 : bas avant droit
             new Vector3(-0.5f, -0.5f,  0.5f),  // 3 : bas avant gauche
-            new Vector3(-0.5f,  0.0f, -0.5f),  // 4 : haut arrière gauche (Y=0)
-            new Vector3( 0.5f,  0.0f, -0.5f),  // 5 : haut arrière droit (Y=0)
+            new Vector3(-0.5f,  0.0f, -0.5f),  // 4 : haut arrière gauche (Y=0, pas 0.5)
+            new Vector3( 0.5f,  0.0f, -0.5f),  // 5 : haut arrière droit (Y=0, pas 0.5)
         };
 
         var shape = new ConvexPolygonShape3D();
