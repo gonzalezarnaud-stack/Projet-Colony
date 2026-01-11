@@ -220,4 +220,28 @@ public class World
         chunk.ClearBlocks(localX, localY, localZ);
         return true;
     }
+
+    // ------------------------------------------------------------------------
+    // REMOVEBLOCK — Supprimer un bloc spécifique à une position monde
+    // ------------------------------------------------------------------------
+    // Utilisé en mode fin pour supprimer un seul bloc parmi plusieurs
+    // dans le même voxel.
+    public bool RemoveBlock(int worldX, int worldY, int worldZ, byte subX, byte subY, byte subZ)
+    {
+        var chunkX = WorldToChunk(worldX);
+        var chunkY = WorldToChunk(worldY);
+        var chunkZ = WorldToChunk(worldZ);
+        var chunk = _chunkManager.GetChunk(chunkX, chunkY, chunkZ);
+
+        if (chunk == null)
+        {
+            return false;
+        }
+
+        var localX = WorldToLocal(worldX);
+        var localY = WorldToLocal(worldY);
+        var localZ = WorldToLocal(worldZ);
+
+        return chunk.RemoveBlock(localX, localY, localZ, subX, subY, subZ);
+    }
 }

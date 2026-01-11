@@ -239,24 +239,36 @@ public partial class Player : CharacterBody3D
             // ----------------------------------------------------------------
             if (mouseButton.ButtonIndex == MouseButton.Left)
             {
-                // Lance un rayon depuis la caméra
                 var result = Raycast();
-                
-                // Si le rayon touche quelque chose
+    
                 if (result.Count > 0)
                 {
-                    // Récupère le collider (StaticBody3D) touché
                     var collider = (Node3D)result["collider"];
-                    
-                    // La position du bloc = position du collider
-                    // On utilise RoundToInt car la position devrait être entière
-                    // mais peut avoir de petites erreurs flottantes
+        
                     var blockX = Mathf.RoundToInt(collider.GlobalPosition.X);
                     var blockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
                     var blockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
 
-                    // Supprime tous les blocs à cette position dans les données
-                    Main.World.ClearBlocks(blockX, blockY, blockZ);
+                    if (_fineMode)
+                    {
+                        // ------------------------------------------------------------
+                        // MODE FIN — Supprimer seulement le bloc visé
+                        // ------------------------------------------------------------
+                        // On récupère la sous-position du bloc via ses métadonnées
+                        // et on supprime uniquement ce bloc.
+                        byte subX = collider.HasMeta("SubX") ? (byte)(int)collider.GetMeta("SubX") : (byte)0;
+                        byte subY = collider.HasMeta("SubY") ? (byte)(int)collider.GetMeta("SubY") : (byte)0;
+                        byte subZ = collider.HasMeta("SubZ") ? (byte)(int)collider.GetMeta("SubZ") : (byte)0;
+            
+                        Main.World.RemoveBlock(blockX, blockY, blockZ, subX, subY, subZ);
+                    }
+                    else
+                    {
+                        // ------------------------------------------------------------
+                        // MODE NORMAL — Supprimer tous les blocs du voxel
+                        // ------------------------------------------------------------
+                        Main.World.ClearBlocks(blockX, blockY, blockZ);
+                    }
 
                     // Supprime le visuel du bloc
                     collider.QueueFree();

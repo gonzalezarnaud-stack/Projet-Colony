@@ -41,6 +41,8 @@ public partial class UiInHand : Label
     private string _shapeName = "Full";
     private int _rotation = 0;
 
+    // Mode de placement actuel (Normal ou Fin)
+    // Mis à jour par Player.cs quand on appuie sur F.
     private bool _fineMode = false;
 
     // ------------------------------------------------------------------------
@@ -94,7 +96,12 @@ public partial class UiInHand : Label
         UpdateDisplay();
     }
 
-    // Touche F — change le mode de placement
+    // ------------------------------------------------------------------------
+    // SETFINEMODE — Change l'affichage du mode de placement
+    // ------------------------------------------------------------------------
+    // Appelée par Player.cs quand le joueur appuie sur F.
+    // Mode Normal = placement par voxel entier
+    // Mode Fin = placement dans la sous-grille 4×4×4
     public void SetFineMode(bool fineMode)
     {
         _fineMode = fineMode;

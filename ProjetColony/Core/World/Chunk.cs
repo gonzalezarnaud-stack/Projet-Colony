@@ -144,4 +144,29 @@ public class Chunk
     {
         _blocks[x, y, z].Clear();
     }
+
+    // ------------------------------------------------------------------------
+    // REMOVEBLOCK — Supprimer un bloc spécifique par sa sous-position
+    // ------------------------------------------------------------------------
+    // En mode fin, un voxel peut contenir plusieurs blocs (ex: 4 poteaux).
+    // Cette méthode supprime UN SEUL bloc identifié par SubX/Y/Z.
+    //
+    // Paramètres : position locale (0-15) + sous-position du bloc à supprimer
+    // Retourne : true si un bloc a été supprimé, false sinon
+    public bool RemoveBlock(int x, int y, int z, byte subX, byte subY, byte subZ)
+    {
+        var blocks = _blocks[x, y, z];
+        
+        // Cherche le bloc avec la bonne sous-position
+        for (int i = 0; i < blocks.Count; i++)
+        {
+            if (blocks[i].SubX == subX && blocks[i].SubY == subY && blocks[i].SubZ == subZ)
+            {
+                blocks.RemoveAt(i);
+                return true;
+            }
+        }
+        
+        return false;
+    }
 }
