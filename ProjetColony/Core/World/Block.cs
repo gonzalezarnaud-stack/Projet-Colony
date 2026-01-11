@@ -54,4 +54,21 @@ public struct Block
     //
     // Note : par défaut, RotationId = 0 car les struct sont initialisées à zéro.
     public ushort RotationId;
+
+    // ------------------------------------------------------------------------
+    // LA SOUS-POSITION (Sous-grille 4×4×4)
+    // ------------------------------------------------------------------------
+    // Position du bloc à l'intérieur du voxel.
+    // Chaque voxel est divisé en 4×4×4 = 64 sous-positions possibles.
+    // Valeurs : 0, 1, 2, ou 3 pour chaque axe.
+    //
+    // Exemple : un poteau en SubX=0, SubY=0, SubZ=0 sera dans le coin
+    // bas-arrière-gauche du voxel. En SubX=3, SubY=0, SubZ=3, il sera
+    // dans le coin bas-avant-droit.
+    //
+    // Type byte = 0 à 255, stocké sur 1 octet (économie de mémoire).
+    // Par défaut, tout est à 0 (coin bas-arrière-gauche).
+    public byte SubX;
+    public byte SubY;
+    public byte SubZ;
 }

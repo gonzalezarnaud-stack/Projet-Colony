@@ -13,7 +13,10 @@
 // - Casse des blocs (clic gauche)
 // - Pose des blocs (clic droit)
 // - Sélection du type de bloc (touches 1, 2, 3)
-// - Affiche la surbrillance du bloc visé
+// - Sélection de la forme (touches 4, 5, 6, 7, 8)
+// - Rotation du bloc (touche R)
+// - Mode fin avec sous-grille 4×4×4 (touche F)
+// - Affiche la surbrillance du bloc visé (preview)
 //
 // DIFFÉRENCE AVEC FREECAMERA :
 // - FreeCamera vole librement, traverse tout (mode debug/noclip)
@@ -34,9 +37,6 @@ using ProjetColony.Core.Data;
 using ProjetColony.Engine.Rendering;
 using ProjetColony.Engine.UI;
 using ProjetColony.Scenes;
-using System.Security.Cryptography.X509Certificates;
-using System.Runtime.CompilerServices;
-using System.Linq;
 
 namespace ProjetColony.Engine.Input;
 
@@ -126,19 +126,24 @@ public partial class Player : CharacterBody3D
     // - Plus de types de blocs
     private ushort _selectedMaterialId = Materials.Stone;
     
-    // La forme du bloc sélectionné (touches 4, 5, 6, 7).
+    // La forme du bloc sélectionné (touches 4, 5, 6, 7, 8).
     // Par défaut : bloc plein (Shapes.Full).
-    //
-    // ÉVOLUTION FUTURE :
-    // - Afficher la forme dans l'UI (UiInHand ou nouveau composant)
-    // - Molette souris pour parcourir les formes
-    // - Sous-grille 4×4×4 pour placement fin (MVP-B)
     private ushort _selectedShapeId = Shapes.Full;
 
     // La rotation du bloc sélectionné (touche R pour tourner).
     // Valeurs : 0, 1, 2, 3 = 0°, 90°, 180°, 270°
     // S'applique aux pentes et autres blocs directionnels.
     private ushort _selectedRotation = 0;
+
+    // ========================================================================
+    // MODE FIN — Construction dans la sous-grille 4×4×4
+    // ========================================================================
+    // Quand _fineMode est true, les blocs peuvent être placés à des
+    // sous-positions précises dans le voxel (4×4×4 = 64 positions possibles).
+    // 
+    // Toggle avec la touche F.
+    // En mode normal (_fineMode = false), les blocs sont centrés.
+    private bool _fineMode = false;
 
     // ========================================================================
     // RÉFÉRENCES
@@ -152,11 +157,10 @@ public partial class Player : CharacterBody3D
     private float _interactionRange = 5.0f;
 
     // ------------------------------------------------------------------------
-    // SURBRILLANCE DU BLOC VISÉ
+    // SURBRILLANCE DU BLOC VISÉ (Preview)
     // ------------------------------------------------------------------------
-    // BlockHighlight est un cube semi-transparent qui montre quel bloc
-    // on regarde. Il est créé comme enfant du Player mais utilise
-    // GlobalPosition pour rester fixe dans le monde.
+    // BlockHighlight est un mesh semi-transparent qui montre où le bloc
+    // sera posé. Il affiche la forme sélectionnée avec la rotation.
     private BlockHighLight _blockHighLight;
 
     // ========================================================================
@@ -251,8 +255,8 @@ public partial class Player : CharacterBody3D
                     var blockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
                     var blockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
 
-                    // Met le bloc à air dans les données (World gère les conversions)
-                    Main.World.SetBlock(blockX, blockY, blockZ, new Block{MaterialId = Materials.Air});
+                    // Supprime tous les blocs à cette position dans les données
+                    Main.World.ClearBlocks(blockX, blockY, blockZ);
 
                     // Supprime le visuel du bloc
                     collider.QueueFree();
@@ -272,27 +276,106 @@ public partial class Player : CharacterBody3D
                     var hitNormal = (Vector3)result["normal"];
                     var collider = (Node3D)result["collider"];
 
-                    // Position du bloc touché (celui sur lequel on clique)
+                    // Position du VOXEL touché (celui sur lequel on clique)
                     var hitBlockX = Mathf.RoundToInt(collider.GlobalPosition.X);
                     var hitBlockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
                     var hitBlockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
                     
-                    // Position du nouveau bloc = bloc touché + normale
-                    // Si normale = (0, 1, 0), le nouveau bloc est AU-DESSUS
-                    // Si normale = (1, 0, 0), le nouveau bloc est À DROITE
-                    var blockX = hitBlockX + Mathf.RoundToInt(hitNormal.X);
-                    var blockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
-                    var blockZ = hitBlockZ + Mathf.RoundToInt(hitNormal.Z);
-                    
-                    // Vérifie que la position est vide (air) avant de poser
-                    if (Main.World.GetBlock(blockX, blockY, blockZ).MaterialId == Materials.Air)
+                    // --------------------------------------------------------
+                    // CALCUL DE LA POSITION DU NOUVEAU BLOC
+                    // --------------------------------------------------------
+                    int blockX;
+                    int blockY;
+                    int blockZ;
+                    byte subX = 0;
+                    byte subY = 0;
+                    byte subZ = 0;
+
+                    if (_fineMode)
                     {
-                        // Met le bloc sélectionné dans les données
-                        var block = new Block{MaterialId = _selectedMaterialId, ShapeId = _selectedShapeId, RotationId = _selectedRotation};
-                        Main.World.SetBlock(blockX, blockY, blockZ, block);
+                        // ------------------------------------------------------------
+                        // MODE FIN — Se coller au bloc visé
+                        // ------------------------------------------------------------
+                        // Même logique que dans _Process pour le highlight.
+                        // On reste dans le même voxel et on se colle au bloc visé.
+                        blockX = hitBlockX;
+                        blockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
+                        blockZ = hitBlockZ;
+
+                        // Récupérer la sous-position du bloc visé (0 si pas de métadonnée)
+                        int hitSubX = collider.HasMeta("SubX") ? (int)collider.GetMeta("SubX") : 0;
+                        int hitSubZ = collider.HasMeta("SubZ") ? (int)collider.GetMeta("SubZ") : 0;
+
+                        // Variables temporaires (int) pour les calculs
+                        // On convertira en byte à la fin pour subX/subZ
+                        int tempSubX;
+                        int tempSubZ;
+
+                        // Si le bloc visé est centré (Sub=0), utiliser hitPosition
+                        if (hitSubX == 0 && hitSubZ == 0)
+                        {
+                            var hitPosition = (Vector3)result["position"];
+                            float fracX = hitPosition.X - (hitBlockX - 0.5f);
+                            float fracZ = hitPosition.Z - (hitBlockZ - 0.5f);
+                            tempSubX = (int)(fracX * 4) + 1;
+                            tempSubZ = (int)(fracZ * 4) + 1;
+                        }
+                        else
+                        {
+                            // Sinon, partir de la sous-position du bloc visé
+                            tempSubX = hitSubX;
+                            tempSubZ = hitSubZ;
+                        }
+
+                        // Décaler selon la normale pour se coller
+                        if (hitNormal.X > 0) tempSubX += 1;
+                        else if (hitNormal.X < 0) tempSubX -= 1;
+
+                        if (hitNormal.Z > 0) tempSubZ += 1;
+                        else if (hitNormal.Z < 0) tempSubZ -= 1;
+
+                        // Si on dépasse, changer de voxel
+                        if (tempSubX > 4) { tempSubX = 1; blockX += 1; }
+                        if (tempSubX < 1) { tempSubX = 4; blockX -= 1; }
+
+                        if (tempSubZ > 4) { tempSubZ = 1; blockZ += 1; }
+                        if (tempSubZ < 1) { tempSubZ = 4; blockZ -= 1; }
+
+                        // Convertir en byte pour le Block
+                        subX = (byte)tempSubX;
+                        subZ = (byte)tempSubZ;
+                    }
+
+                else
+                    {
+                        // ----------------------------------------------------
+                        // MODE NORMAL — Placement par voxel entier
+                        // ----------------------------------------------------
+                        blockX = hitBlockX + Mathf.RoundToInt(hitNormal.X);
+                        blockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
+                        blockZ = hitBlockZ + Mathf.RoundToInt(hitNormal.Z);
                         
-                        // Crée le visuel via BlockRenderer (évite la duplication de code)
-                        var staticBody = BlockRenderer.CreateBlock(_selectedMaterialId, _selectedShapeId, _selectedRotation, new Vector3(blockX, blockY, blockZ));
+                        // SubX/Y/Z restent à 0 (bloc centré)
+                    }
+                    
+                    // Vérifie que la position est vide avant de poser
+                    if (Main.World.GetBlocks(blockX, blockY, blockZ).Count == 0 || _fineMode)
+                    {
+                        // Crée le bloc avec ses propriétés
+                        var block = new Block{
+                            MaterialId = _selectedMaterialId,
+                            ShapeId = _selectedShapeId,
+                            RotationId = _selectedRotation,
+                            SubX = subX,
+                            SubY = subY,
+                            SubZ = subZ
+                        };
+                        
+                        // Ajoute aux données du monde
+                        Main.World.AddBlock(blockX, blockY, blockZ, block);
+                        
+                        // Crée le visuel via BlockRenderer
+                        var staticBody = BlockRenderer.CreateBlock(block, new Vector3(blockX, blockY, blockZ));
 
                         // Ajoute à la scène principale
                         Main.Instance.AddChild(staticBody);
@@ -323,7 +406,7 @@ public partial class Player : CharacterBody3D
                 }             
             }
             // ----------------------------------------------------------------
-            // TOUCHE ROTATION BLOC — Rotation du bloc en main
+            // TOUCHE R — Rotation du bloc en main
             // ----------------------------------------------------------------
             else if (keyEvent.Keycode == Key.R)
             {
@@ -331,12 +414,17 @@ public partial class Player : CharacterBody3D
                 _selectedRotation = (ushort)(_selectedRotation % 4);
                 Main.UiInHand.SetRotation(_selectedRotation);      
             }
-
+            // ----------------------------------------------------------------
+            // TOUCHE F — Toggle mode fin (sous-grille 4×4×4)
+            // ----------------------------------------------------------------
+            else if (keyEvent.Keycode == Key.F)
+            {
+                _fineMode = !_fineMode;
+                Main.UiInHand.SetFineMode(_fineMode);
+            }
             // ----------------------------------------------------------------
             // TOUCHES 1, 2, 3 — Sélection du type de bloc
             // ----------------------------------------------------------------
-            // Change le bloc qui sera posé au prochain clic droit.
-            // Pas d'interface visuelle pour l'instant, mais ça fonctionne !
             else if (keyEvent.Keycode == Key.Key1)
             {
                 _selectedMaterialId = Materials.Stone;
@@ -353,10 +441,8 @@ public partial class Player : CharacterBody3D
                 Main.UiInHand.SetMaterial("Grass");
             }
             // ----------------------------------------------------------------
-            // TOUCHES 4, 5, 6, 7 — Sélection de la forme
+            // TOUCHES 4, 5, 6, 7, 8 — Sélection de la forme
             // ----------------------------------------------------------------
-            // Change la forme du bloc qui sera posé au prochain clic droit.
-            // Fonctionne indépendamment du matériau (pierre en demi-bloc, etc.)
             else if (keyEvent.Keycode == Key.Key4)
             {
                 _selectedShapeId = Shapes.Full;
@@ -386,14 +472,10 @@ public partial class Player : CharacterBody3D
     }
 
     // ========================================================================
-    // _PROCESS — Mise à jour à chaque frame (pour le visuel)
+    // _PROCESS — Mise à jour à chaque frame (pour le highlight/preview)
     // ========================================================================
     // Appelée à chaque frame (~60 fois par seconde).
-    // Utilisée ici pour mettre à jour le highlight du bloc visé.
-    //
-    // DIFFÉRENCE AVEC _PHYSICSPROCESS :
-    // - _Process : pour les trucs visuels, synchro avec l'affichage
-    // - _PhysicsProcess : pour la physique, synchro avec le moteur physique
+    // Met à jour la position et la forme du highlight selon ce qu'on vise.
     public override void _Process(double delta)
     {
         base._Process(delta);
@@ -403,21 +485,112 @@ public partial class Player : CharacterBody3D
 
         if (result.Count > 0)
         {
-            // On vise un bloc → récupère sa position et met à jour le highlight
+            // On vise un bloc → calculer où le nouveau bloc serait posé
             var collider = (Node3D)result["collider"];
-            var blockX = Mathf.RoundToInt(collider.GlobalPosition.X);
-            var blockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
-            var blockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
-            
-            _blockHighLight.UpdateHighLight(new Vector3(blockX, blockY, blockZ));
-        }
+            var hitNormal = (Vector3)result["normal"];
+
+            // Position du VOXEL touché
+            var hitBlockX = Mathf.RoundToInt(collider.GlobalPosition.X);
+            var hitBlockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
+            var hitBlockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
+
+            // ----------------------------------------------------------------
+            // CALCUL DE LA POSITION DU HIGHLIGHT
+            // ----------------------------------------------------------------
+            int blockX;
+            int blockY;
+            int blockZ;
+            float offsetX = 0;
+            float offsetY = 0;
+            float offsetZ = 0;
+
+            if (_fineMode)
+            {
+                // ------------------------------------------------------------
+                // MODE FIN — Se coller au bloc visé
+                // ------------------------------------------------------------
+                // En mode fin, on reste dans le même voxel (sauf Y pour poser
+                // au-dessus du sol). Le highlight se positionne COLLÉ au bloc
+                // visé, pas à une position calculée depuis hitPosition.
+                blockX = hitBlockX;
+                blockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
+                blockZ = hitBlockZ;
+
+                // ------------------------------------------------------------
+                // RÉCUPÉRATION DE LA SOUS-POSITION DU BLOC VISÉ
+                // ------------------------------------------------------------
+                // HasMeta vérifie si la métadonnée existe.
+                // GetMeta la récupère. On cast en (int) car SetMeta stocke un Variant.
+                // Si pas de métadonnée (bloc du terrain), on utilise 0 (centré).
+                int hitSubX = collider.HasMeta("SubX") ? (int)collider.GetMeta("SubX") : 0;
+                int hitSubZ = collider.HasMeta("SubZ") ? (int)collider.GetMeta("SubZ") : 0;
+
+                int subX;
+                int subZ;
+
+                // ------------------------------------------------------------
+                // CALCUL DE LA SOUS-POSITION DU NOUVEAU BLOC
+                // ------------------------------------------------------------
+                if (hitSubX == 0 && hitSubZ == 0)
+                {
+                    // Bloc centré (terrain ou bloc plein) → utiliser hitPosition
+                    // pour déterminer où on clique dans le voxel
+                    var hitPosition = (Vector3)result["position"];
+                    float fracX = hitPosition.X - (hitBlockX - 0.5f);
+                    float fracZ = hitPosition.Z - (hitBlockZ - 0.5f);
+                    subX = (int)(fracX * 4) + 1;
+                    subZ = (int)(fracZ * 4) + 1;
+                }
+                else
+                {
+                    // Bloc avec sous-position (poteau, etc.) → partir de sa position
+                    // pour se coller à lui
+                    subX = hitSubX;
+                    subZ = hitSubZ;
+                }
+
+                // ------------------------------------------------------------
+                // DÉCALAGE SELON LA NORMALE
+                // ------------------------------------------------------------
+                // La normale indique de quel côté on a cliqué.
+                // On décale d'une sous-position dans cette direction.
+                // Exemple : clic sur face droite (normale X+) → subX += 1
+                if (hitNormal.X > 0) subX += 1;
+                else if (hitNormal.X < 0) subX -= 1;
+
+                if (hitNormal.Z > 0) subZ += 1;
+                else if (hitNormal.Z < 0) subZ -= 1;
+
+                // ------------------------------------------------------------
+                // GESTION DES DÉPASSEMENTS
+                // ------------------------------------------------------------
+                // SubX/Z doivent rester entre 1 et 4.
+                // Si on dépasse, on passe au voxel adjacent.
+                // Exemple : subX = 5 → subX = 1 du voxel suivant (blockX + 1)
+                if (subX > 4) { subX = 1; blockX += 1; }
+                if (subX < 1) { subX = 4; blockX -= 1; }
+
+                if (subZ > 4) { subZ = 1; blockZ += 1; }
+                if (subZ < 1) { subZ = 4; blockZ -= 1; }
+
+                // Calcul de l'offset pour le highlight
+                offsetX = (subX - 2.5f) * 0.25f;
+                offsetZ = (subZ - 2.5f) * 0.25f;
+            }
+        
         else
-        {
-            // On ne vise rien → cache le highlight
-            _blockHighLight.UpdateHighLight(null);
+            {
+                // ------------------------------------------------------------
+                // MODE NORMAL — Le highlight va au voxel adjacent
+                // ------------------------------------------------------------
+                blockX = hitBlockX + Mathf.RoundToInt(hitNormal.X);
+                blockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
+                blockZ = hitBlockZ + Mathf.RoundToInt(hitNormal.Z);
+            }
+
+            _blockHighLight.UpdateHighLight(_selectedShapeId, _selectedRotation, new Vector3(blockX + offsetX, blockY + offsetY, blockZ + offsetZ));
         }
     }
-
     // ========================================================================
     // _PHYSICSPROCESS — Mise à jour physique
     // ========================================================================

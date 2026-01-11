@@ -27,6 +27,7 @@
 // ============================================================================
 
 using System;
+using System.Collections.Generic;
 
 namespace ProjetColony.Core.World;
 
@@ -118,18 +119,18 @@ public class World
     // ------------------------------------------------------------------------
 
     // ------------------------------------------------------------------------
-    // GETBLOCK — Lire un bloc à une position monde
+    // GETBLOCKS — Lire les blocs à une position monde
     // ------------------------------------------------------------------------
     // Paramètres : coordonnées mondiales (peuvent être négatives)
-    // Retour : le Block à cette position (air si le chunk n'existe pas)
+    // Retour : liste des blocs à cette position (liste vide si chunk inexistant)
     //
     // ÉTAPES :
-    // 1. Trouver dans quel chunk se trouve ce bloc
+    // 1. Trouver dans quel chunk se trouve cette position
     // 2. Récupérer le chunk (peut être null)
-    // 3. Si null → retourner de l'air
+    // 3. Si null → retourner une liste vide (air)
     // 4. Calculer la position locale dans le chunk
-    // 5. Demander au chunk le bloc à cette position
-    public Block GetBlock(int worldX, int worldY, int worldZ)
+    // 5. Demander au chunk les blocs à cette position
+    public List<Block> GetBlocks(int worldX, int worldY, int worldZ)
     {
         // Étape 1 : Convertir coordonnées monde → coordonnées chunk
         var chunkX = WorldToChunk(worldX);
@@ -142,7 +143,7 @@ public class World
         // Étape 3 : Si le chunk n'existe pas, c'est de l'air
         if (chunk == null)
         {
-            return new Block{MaterialId = 0};
+            return new List<Block>();
         }
 
         // Étape 4 : Convertir coordonnées monde → position locale
@@ -151,20 +152,23 @@ public class World
         var localZ = WorldToLocal(worldZ);
 
         // Étape 5 : Demander au chunk le bloc
-        return chunk.GetBlock(localX, localY, localZ);
+        return chunk.GetBlocks(localX, localY, localZ);
     }
 
     // ------------------------------------------------------------------------
-    // SETBLOCK — Placer un bloc à une position monde
+    // ADDBLOCK — Ajouter un bloc à une position monde
     // ------------------------------------------------------------------------
-    // Paramètres : coordonnées mondiales + le bloc à placer
+    // Paramètres : coordonnées mondiales + le bloc à ajouter
     // Retour : true si réussi, false si le chunk n'existe pas
+    //
+    // Le bloc est AJOUTÉ à la liste existante (plusieurs blocs possibles
+    // par voxel grâce à la sous-grille 4×4×4).
     //
     // ÉVOLUTION FUTURE :
     //   - Émettre un événement "BlockChanged" pour que le rendu se mette à jour
     //   - Valider si le placement est autorisé (règles de jeu)
     //   - Créer le chunk automatiquement s'il n'existe pas
-    public bool SetBlock(int worldX, int worldY, int worldZ, Block block)
+    public bool AddBlock(int worldX, int worldY, int worldZ, Block block)
     {
         // Trouver le chunk
         var chunkX = WorldToChunk(worldX);
@@ -184,7 +188,36 @@ public class World
         var localZ = WorldToLocal(worldZ);
 
         // Placer le bloc
-        chunk.SetBlock(localX, localY, localZ, block);
+        chunk.AddBlock(localX, localY, localZ, block);
+        return true;
+    }
+
+    // ------------------------------------------------------------------------
+    // CLEARBLOCKS — Supprimer tous les blocs à une position monde
+    // ------------------------------------------------------------------------
+    // Paramètres : coordonnées mondiales
+    // Retour : true si réussi, false si le chunk n'existe pas
+    //
+    // Vide entièrement la liste de blocs à cette position.
+    // Utilisé quand le joueur casse un bloc en mode normal.
+    public bool ClearBlocks(int worldX, int worldY, int worldZ)
+    {
+        var chunkX = WorldToChunk(worldX);
+        var chunkY = WorldToChunk(worldY);
+        var chunkZ = WorldToChunk(worldZ);
+        var chunk = _chunkManager.GetChunk(chunkX, chunkY, chunkZ);
+
+        if (chunk == null)
+        {
+            return false;
+        }
+
+        var localX = WorldToLocal(worldX);
+        var localY = WorldToLocal(worldY);
+        var localZ = WorldToLocal(worldZ);
+
+        // Retirer les blocs
+        chunk.ClearBlocks(localX, localY, localZ);
         return true;
     }
 }

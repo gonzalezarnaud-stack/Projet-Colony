@@ -26,6 +26,7 @@
 // ============================================================================
 
 using Godot;
+using ProjetColony.Core.Data;
 
 namespace ProjetColony.Engine.Rendering;
 
@@ -57,6 +58,7 @@ public partial class BlockHighLight : MeshInstance3D
         // Le 4ème paramètre (0.3f) est l'alpha : 0 = invisible, 1 = opaque.
         var material = new StandardMaterial3D();
         material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+        material.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
         material.AlbedoColor = new Color(1, 1, 1, 0.3f);
         MaterialOverride = material;
         
@@ -74,7 +76,7 @@ public partial class BlockHighLight : MeshInstance3D
     //
     // Vector3? (avec ?) est un type "nullable" — il peut contenir une valeur
     // OU être null. C'est parfait pour "il y a un bloc" vs "il n'y a rien".
-    public void UpdateHighLight(Vector3? position)
+    public void UpdateHighLight(ushort shapeId, ushort rotationId, Vector3? position)
     {
         if (position == null)
         {
@@ -83,14 +85,20 @@ public partial class BlockHighLight : MeshInstance3D
         }
         else
         {
+            Mesh = BlockRenderer.GetMeshForShape(shapeId);
+
+            float offsetY = 0;
+            if (shapeId == Shapes.Demi)
+            {
+                offsetY = -0.25f;
+            }
+
             // Bloc visé → déplacer et afficher le highlight
             // GlobalPosition car on veut la position dans le monde,
             // pas relative au Player (qui est notre parent).
-            GlobalPosition = position.Value;
-            
-            // Force la rotation à zéro pour que le highlight reste aligné
-            // avec les axes du monde, même si le Player tourne.
-            GlobalRotation = Vector3.Zero;
+            GlobalPosition = position.Value + new Vector3(0.001f, offsetY + 0.001f, 0.001f);
+
+            GlobalRotation = new Vector3(0, Mathf.DegToRad(rotationId * 90), 0);
             
             Visible = true;
         }

@@ -120,7 +120,7 @@ public partial class Main : Node3D
                                         block = new Block{MaterialId = Materials.Stone};
                                     }
                                     
-                                    chunk.SetBlock(bx, by, bz, block);
+                                    chunk.AddBlock(bx, by, bz, block);
                                 }
 
                                 // ============================================
@@ -130,16 +130,19 @@ public partial class Main : Node3D
                                 var worldY = y * Chunk.Size + by;
 
                                 // Récupère le bloc (avec ses coordonnées LOCALES)
-                                var blocToRender = chunk.GetBlock(bx, by, bz);
+                                var blocToRender = chunk.GetBlocks(bx, by, bz);
 
                                 // Si le bloc n'est pas de l'air, on l'affiche
-                                if (blocToRender.MaterialId != Materials.Air)
+                                if (blocToRender.Count > 0)
                                 {
                                     // ----------------------------------------
                                     // CRÉATION DU VISUEL
                                     // ----------------------------------------
-                                    var staticBody = BlockRenderer.CreateBlock(blocToRender.MaterialId, blocToRender.ShapeId, blocToRender.RotationId, new Vector3(worldX, worldY, worldZ));
-                                    AddChild(staticBody);
+                                    foreach (var block in blocToRender)
+                                    {
+                                        var staticBody = BlockRenderer.CreateBlock(block, new Vector3(worldX, worldY, worldZ));
+                                        AddChild(staticBody);
+                                    }
                                 }
                             }
                         }

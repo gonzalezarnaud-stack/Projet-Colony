@@ -30,6 +30,7 @@
 
 using Godot;
 using ProjetColony.Core.Data;
+using ProjetColony.Core.World;
 
 namespace ProjetColony.Engine.Rendering;
 
@@ -39,9 +40,8 @@ public static class BlockRenderer
     // CREATEBLOCK — Crée le visuel complet d'un bloc
     // ------------------------------------------------------------------------
     // Paramètres :
-    //   - materialId : le type de bloc (Materials.Stone, Materials.Dirt, etc.)
-    //   - shapeId : la forme du bloc (Shapes.Full, Shapes.Demi, etc.)
-    //   - position : où placer le bloc dans le monde (coordonnées mondiales)
+    //   - block : le bloc à créer (contient MaterialId, ShapeId, RotationId, SubX/Y/Z)
+    //   - position : position du VOXEL dans le monde (coordonnées entières)
     //
     // Retourne : un StaticBody3D prêt à être ajouté à la scène
     //
@@ -49,19 +49,77 @@ public static class BlockRenderer
     //   - Un MeshInstance3D (ce qu'on voit — le cube coloré)
     //   - Un CollisionShape3D (ce qui bloque le joueur)
     //
+    // ARCHITECTURE IMPORTANTE :
+    // Le StaticBody3D est positionné au CENTRE du voxel.
+    // Le MeshInstance3D et CollisionShape3D sont décalés à l'intérieur
+    // selon SubX/Y/Z. Cela permet au raycast de toujours retrouver
+    // le bon voxel via collider.GlobalPosition.
+    //
     // POURQUOI STATICBODY3D ?
     // Godot a plusieurs types de corps physiques :
     //   - StaticBody3D : immobile, ne bouge jamais (parfait pour le terrain)
     //   - RigidBody3D : affecté par la physique (gravité, collisions)
     //   - CharacterBody3D : contrôlé par le code (le joueur)
     // Les blocs du terrain ne bougent pas, donc StaticBody3D.
-    public static StaticBody3D CreateBlock(ushort materialId, ushort shapeId, ushort rotationId, Vector3 position)
+    public static StaticBody3D CreateBlock(Block block, Vector3 position)
     {
         // Crée le conteneur physique
         var staticBody = new StaticBody3D();
-        staticBody.Position = position;
+        
+        // Extrait les propriétés du bloc
+        var materialId = block.MaterialId;
+        var shapeId = block.ShapeId;
+        var rotationId = block.RotationId;
+        
+        // Applique la rotation au conteneur
         staticBody.Rotation = new Vector3(0, Mathf.DegToRad(rotationId * 90), 0);
-                        
+
+        // --------------------------------------------------------------------
+        // CALCUL DE L'OFFSET (sous-grille 4×4×4)
+        // --------------------------------------------------------------------
+        // SubX/Y/Z = 0 → centré (mode normal)
+        // SubX/Y/Z = 1,2,3,4 → position dans la sous-grille (mode fin)
+        //
+        // Formule : (Sub - 2.5) * 0.25
+        //   Sub=1 → offset = -0.375 (coin gauche/bas/arrière)
+        //   Sub=2 → offset = -0.125
+        //   Sub=3 → offset = +0.125
+        //   Sub=4 → offset = +0.375 (coin droit/haut/avant)
+        
+        float offsetX;
+        if (block.SubX == 0)
+        {
+            offsetX = 0;
+        }
+        else
+        {
+            offsetX = (block.SubX - 2.5f) * 0.25f;
+        }
+
+        float offsetY;
+        if (block.SubY == 0)
+        {
+            offsetY = 0;
+        }
+        else
+        {
+            offsetY = (block.SubY - 2.5f) * 0.25f;
+        }
+
+        float offsetZ;
+        if (block.SubZ == 0)
+        {
+            offsetZ = 0;
+        }
+        else
+        {
+            offsetZ = (block.SubZ - 2.5f) * 0.25f;
+        }
+
+        // Le StaticBody reste au centre du voxel
+        // L'offset sera appliqué aux enfants (mesh et collision)
+        staticBody.Position = position;
+
         // --------------------------------------------------------------------
         // LE MESH — Ce qu'on voit à l'écran
         // --------------------------------------------------------------------
@@ -94,8 +152,6 @@ public static class BlockRenderer
         else if (shapeId == Shapes.Post)
         {
             // Poteau : cube fin 0.25×1×0.25
-            // Position (0,0,0) = centré dans le bloc (modifiable plus tard
-            // pour la sous-grille 4×4×4)
             shape = new BoxMesh();
             meshInstance.Position = new Vector3(0.0f, 0.0f, 0.0f);
             shape.Size = new Vector3(0.25f, 1.0f, 0.25f);
@@ -158,8 +214,6 @@ public static class BlockRenderer
         // CollisionShape3D définit la forme utilisée pour les collisions.
         // BoxShape3D = un cube de 1×1×1 (même taille que le mesh).
         // Sans collision, le joueur traverserait les blocs !
-        //
-        // TODO : Adapter la collision à la forme du bloc (pente, demi-bloc)
         
         var collisionShape = new CollisionShape3D();
 
@@ -189,6 +243,16 @@ public static class BlockRenderer
             collisionShape.Shape = new BoxShape3D();
         }
 
+        // --------------------------------------------------------------------
+        // APPLICATION DE L'OFFSET (sous-grille)
+        // --------------------------------------------------------------------
+        // On décale le mesh et la collision DANS le StaticBody.
+        // Le StaticBody reste au centre du voxel pour que le raycast
+        // puisse identifier correctement le voxel.
+        //
+        // "+=" car certaines formes ont déjà un offset (ex: Demi à -0.25 en Y)
+        meshInstance.Position += new Vector3(offsetX, offsetY, offsetZ);
+        collisionShape.Position += new Vector3(offsetX, offsetY, offsetZ);
         
         // --------------------------------------------------------------------
         // ASSEMBLAGE — Hiérarchie de nodes
@@ -201,7 +265,64 @@ public static class BlockRenderer
         staticBody.AddChild(meshInstance);
         staticBody.AddChild(collisionShape);
 
+        // --------------------------------------------------------------------
+        // MÉTADONNÉES — Stockage des infos du bloc pour le raycast
+        // --------------------------------------------------------------------
+        // On sauvegarde SubX/Y/Z et ShapeId dans le StaticBody.
+        // Cela permet au raycast de récupérer ces infos quand on vise un bloc.
+        //
+        // Utilité en mode fin :
+        // Quand on vise un poteau à SubX=2, on veut poser le suivant à SubX=3.
+        // Sans ces métadonnées, on ne saurait pas où est le bloc visé.
+        //
+        // SetMeta(clé, valeur) stocke une donnée arbitraire dans un Node.
+        // GetMeta(clé) la récupère plus tard.
+        staticBody.SetMeta("SubX", (int)block.SubX);
+        staticBody.SetMeta("SubY", (int)block.SubY);
+        staticBody.SetMeta("SubZ", (int)block.SubZ);
+        staticBody.SetMeta("ShapeId", (int)block.ShapeId);
+
         return staticBody;
+    }
+
+    // ========================================================================
+    // GETMESHFORSHAPE — Retourne le mesh correspondant à une forme
+    // ========================================================================
+    // Utilisé par BlockHighlight pour afficher la preview du bloc.
+    // Méthode publique car appelée depuis un autre fichier.
+    //
+    // Paramètre : shapeId — l'identifiant de la forme
+    // Retourne : le Mesh correspondant
+    public static Mesh GetMeshForShape(ushort shapeId)
+    {
+        if (shapeId == Shapes.Full)
+        {
+            return new BoxMesh();
+        }
+        else if (shapeId == Shapes.Demi)
+        {
+            var mesh = new BoxMesh();
+            mesh.Size = new Vector3(1.0f, 0.5f, 1.0f);
+            return mesh;
+        }
+        else if (shapeId == Shapes.Post)
+        {
+            var mesh = new BoxMesh();
+            mesh.Size = new Vector3(0.25f, 1.0f, 0.25f);
+            return mesh;
+        }
+        else if (shapeId == Shapes.FullSlope)
+        {
+            return CreateSlopeMesh();
+        }
+        else if (shapeId == Shapes.DemiSlope)
+        {
+            return CreateDemiSlopeMesh();
+        }
+        else
+        {
+            return new BoxMesh();
+        }
     }
 
     // ========================================================================
@@ -289,6 +410,11 @@ public static class BlockRenderer
         return mesh;
     }
 
+    // ========================================================================
+    // CREATEDEMISLOPEMESH — Crée un mesh de demi-pente
+    // ========================================================================
+    // Même principe que CreateSlopeMesh, mais moitié moins haute.
+    // Les sommets hauts sont à Y = 0 au lieu de Y = 0.5.
     private static Mesh CreateDemiSlopeMesh()
     {
         Vector3[] vertices = new Vector3[]
@@ -297,8 +423,8 @@ public static class BlockRenderer
             new Vector3( 0.5f, -0.5f, -0.5f),  // 1 : bas arrière droit
             new Vector3( 0.5f, -0.5f,  0.5f),  // 2 : bas avant droit
             new Vector3(-0.5f, -0.5f,  0.5f),  // 3 : bas avant gauche
-            new Vector3(-0.5f,  0.0f, -0.5f),  // 4 : haut arrière gauche
-            new Vector3( 0.5f,  0.0f, -0.5f),  // 5 : haut arrière droit
+            new Vector3(-0.5f,  0.0f, -0.5f),  // 4 : haut arrière gauche (Y=0)
+            new Vector3( 0.5f,  0.0f, -0.5f),  // 5 : haut arrière droit (Y=0)
         };
         
         int[] indices = new int[]

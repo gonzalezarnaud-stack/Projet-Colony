@@ -41,6 +41,8 @@ public partial class UiInHand : Label
     private string _shapeName = "Full";
     private int _rotation = 0;
 
+    private bool _fineMode = false;
+
     // ------------------------------------------------------------------------
     // UPDATEDISPLAY — Reconstruit le texte affiché
     // ------------------------------------------------------------------------
@@ -49,7 +51,8 @@ public partial class UiInHand : Label
     // La rotation est convertie en degrés (0, 1, 2, 3 → 0°, 90°, 180°, 270°).
     private void UpdateDisplay()
     {
-        Text = _materialName + " | " + _shapeName + " | " + (_rotation * 90) + "°";
+        string modeName = _fineMode ? "Fin" : "Normal";
+        Text = _materialName + " | " + _shapeName + " | " + (_rotation * 90) + "° | " + modeName;
     }
 
     // ========================================================================
@@ -88,6 +91,13 @@ public partial class UiInHand : Label
     public void SetRotation(int rotation)
     {
         _rotation = rotation;
+        UpdateDisplay();
+    }
+
+    // Touche F — change le mode de placement
+    public void SetFineMode(bool fineMode)
+    {
+        _fineMode = fineMode;
         UpdateDisplay();
     }
 }

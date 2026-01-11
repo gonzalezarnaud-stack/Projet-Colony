@@ -21,6 +21,8 @@
 // On accède à une case avec trois coordonnées : [x, y, z]
 // Exemple : _blocks[5, 10, 3] = le bloc à la position (5, 10, 3) dans ce chunk
 // ============================================================================
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 namespace ProjetColony.Core.World;
 
@@ -36,13 +38,17 @@ public class Chunk
     public const int Size = 16;
 
     // ------------------------------------------------------------------------
-    // LE TABLEAU DE BLOCS
+    // LE TABLEAU DE LISTES DE BLOCS
     // ------------------------------------------------------------------------
     // "private" = accessible uniquement dans cette classe (pas de l'extérieur)
-    // "Block[,,]" = tableau à 3 dimensions contenant des Block
+    // "List<Block>[,,]" = tableau 3D où chaque case contient une LISTE de blocs
     // "_blocks" = le nom (le underscore _ indique que c'est privé, convention)
-    // Ce tableau contient 16×16×16 = 4096 blocs
-    private Block[,,] _blocks;
+    //
+    // POURQUOI UNE LISTE PAR CASE ?
+    // Avec la sous-grille 4×4×4, un même voxel peut contenir plusieurs blocs
+    // à des sous-positions différentes (ex: 4 poteaux dans les coins).
+    // Une liste vide = air (aucun bloc à cette position).
+    private List<Block>[,,] _blocks;
 
     // ------------------------------------------------------------------------
     // POSITION DU CHUNK DANS LE MONDE
@@ -80,33 +86,62 @@ public class Chunk
         // Crée le tableau 3D vide
         // "new" = réserve de la mémoire pour quelque chose de nouveau
         // Block[Size, Size, Size] = tableau de 16×16×16 cases
-        _blocks = new Block[Size, Size, Size];
+        _blocks = new List<Block>[Size, Size, Size];
+
+        for (int bx = 0; bx < Size; bx++)
+        {
+            for (int by = 0; by < Size; by++)
+            {
+                for (int bz = 0; bz < Size; bz++)
+                {
+                    _blocks[bx, by, bz] = new List<Block>();
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------------
-    // MÉTHODE : LIRE UN BLOC
+    // MÉTHODE : LIRE LES BLOCS
     // ------------------------------------------------------------------------
-    // Renvoie le bloc situé à la position (x, y, z) dans ce chunk.
+    // Renvoie la liste des blocs situés à la position (x, y, z) dans ce chunk.
     // x, y, z doivent être entre 0 et 15 (car Size = 16).
     //
-    // "public" = accessible de l'extérieur
-    // "Block" = le type de ce que la méthode renvoie
-    // "return" = renvoie une valeur à celui qui a appelé la méthode
-    public Block GetBlock(int x, int y, int z)
+    // La liste peut contenir :
+    // - 0 bloc = air (vide)
+    // - 1 bloc = cas classique (terrain, mur...)
+    // - Plusieurs blocs = construction fine (poteaux, décorations...)
+    public List<Block> GetBlocks(int x, int y, int z)
     {
         return _blocks[x, y, z];
     }
 
     // ------------------------------------------------------------------------
-    // MÉTHODE : ÉCRIRE UN BLOC
+    // MÉTHODE : AJOUTER UN BLOC
     // ------------------------------------------------------------------------
-    // Place un bloc à la position (x, y, z) dans ce chunk.
+    // Ajoute un bloc à la position (x, y, z) dans ce chunk.
     // x, y, z doivent être entre 0 et 15.
     //
+    // Le bloc est AJOUTÉ à la liste existante (pas de remplacement).
+    // Pour supprimer un bloc, il faudra une méthode RemoveBlock (à venir).
+    //
     // "void" = cette méthode ne renvoie rien, elle fait juste une action
-    // "Block block" = le bloc à placer (reçu en paramètre)
-    public void SetBlock(int x, int y, int z, Block block)
+    // "Block block" = le bloc à ajouter (reçu en paramètre)
+    public void AddBlock(int x, int y, int z, Block block)
     {
-        _blocks[x, y, z] = block;
+        _blocks[x, y, z].Add(block);
+    }
+
+    // ------------------------------------------------------------------------
+    // MÉTHODE : SUPPRIMER TOUS LES BLOCS
+    // ------------------------------------------------------------------------
+    // Vide la liste de blocs à la position (x, y, z).
+    // Après cette opération, la case est vide (air).
+    //
+    // ÉVOLUTION FUTURE :
+    // Une méthode RemoveBlock pour supprimer UN bloc spécifique
+    // (utile en mode fin pour casser un seul poteau parmi plusieurs).
+    public void ClearBlocks(int x, int y, int z)
+    {
+        _blocks[x, y, z].Clear();
     }
 }
