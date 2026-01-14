@@ -115,7 +115,6 @@ public partial class Player : CharacterBody3D
 
         _buildingState = new BuildingState();
         _placementCalculator = new PlacementCalculator();
-        _buildingController = new BuildingController(Main.World, _placementCalculator, _buildingState);
     
         _buildingPreview = new BuildingPreview(
         _camera,
@@ -425,6 +424,13 @@ public partial class Player : CharacterBody3D
     public override void _Process(double delta)
     {
         base._Process(delta);
+
+        // Initialisation différée — attend que Main.World existe
+        if(_buildingController == null && Main.World != null)
+        {
+            _buildingController = new BuildingController(Main.World, _placementCalculator, _buildingState);
+        }
+        
         _buildingPreview.Update();
     }
     // ========================================================================
