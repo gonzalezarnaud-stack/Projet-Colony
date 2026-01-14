@@ -59,7 +59,27 @@ public class PlacementCalculator
     public const int SubFirst = 1;
     public const int SubCenter = 2;
     public const int SubLast = 3;
+
+    // ------------------------------------------------------------------------
+    // DEMI-VOXEL
+    // ------------------------------------------------------------------------
+    // La moitié de la taille d'un voxel (0.5 mètre).
+    // Utilisé pour calculer la position des faces d'un voxel.
+    // Le centre d'un voxel est à (X, Y, Z), ses faces sont à ±0.5 de là.
     public const float HalfVoxel = 0.5f;
+
+    // ------------------------------------------------------------------------
+    // SEUIL DE DÉTECTION DE NORMALE
+    // ------------------------------------------------------------------------
+    // Seuil pour déterminer si une normale pointe dans une direction.
+    // Si normale.X > 0.5 → la face pointe vers +X (droite)
+    // Si normale.X < -0.5 → la face pointe vers -X (gauche)
+    // Sinon → la face ne pointe pas sur cet axe
+    //
+    // Pourquoi 0.5 et pas 0.9 ou 1.0 ?
+    // Les normales sont souvent (1, 0, 0) exactement, mais parfois
+    // légèrement imprécises à cause des erreurs de calcul flottant.
+    // 0.5 laisse une marge de sécurité.
     public const float NormalThreshold = 0.5f;
 
     // ------------------------------------------------------------------------
@@ -86,7 +106,7 @@ public class PlacementCalculator
     //   Cette méthode est un "helper" (assistant) utilisé uniquement
     //   à l'intérieur de cette classe. Personne d'autre n'a besoin
     //   de l'appeler. "private" la cache du reste du code.
-    private int FixSubForNormal(float normal, int currentSub)
+    public int FixSubForNormal(float normal, int currentSub)
     {
         if(normal > NormalThreshold)
         {

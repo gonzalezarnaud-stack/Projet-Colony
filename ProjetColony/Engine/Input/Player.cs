@@ -25,7 +25,6 @@
 // - MoveAndSlide() : déplace en gérant les collisions
 // ============================================================================
 
-using System;
 using Godot;
 using ProjetColony.Core.World;
 using ProjetColony.Core.Data;
@@ -33,9 +32,7 @@ using ProjetColony.Core.Data.Registries;
 using ProjetColony.Core.Input;
 using ProjetColony.Core.Building;
 using ProjetColony.Engine.Rendering;
-using ProjetColony.Engine.UI;
 using ProjetColony.Engine.Building;
-using ProjetColony.Engine.Input;
 using ProjetColony.Scenes;
 
 namespace ProjetColony.Engine.Input;
@@ -77,21 +74,6 @@ public partial class Player : CharacterBody3D
 
     private CameraController _cameraController;
 
-    // ------------------------------------------------------------------------
-    // Position calculée pour le prochain bloc
-    // ------------------------------------------------------------------------
-    // Ces variables sont remplies dans _Process (highlight)
-    // et utilisées dans _Input (pose du bloc).
-    // Cela évite de recalculer deux fois la même chose.
-    
-    private int _nextBlockX;
-    private int _nextBlockY;
-    private int _nextBlockZ;
-    private byte _nextSubX;  // Position dans la sous-grille (1, 2, ou 3)
-    private byte _nextSubY;  // 0 = centré (mode normal)
-    private byte _nextSubZ;
-    private bool _canPlace = false;  // True si on peut poser ici
-
     // ========================================================================
     // RÉFÉRENCES
     // ========================================================================
@@ -108,6 +90,7 @@ public partial class Player : CharacterBody3D
     private BuildingState _buildingState;
     private BuildingController _buildingController;
     private PlacementCalculator _placementCalculator;
+    private BuildingPreview _buildingPreview;
 
     // ========================================================================
     // _READY — Initialisation (appelée une fois au démarrage)
@@ -133,6 +116,14 @@ public partial class Player : CharacterBody3D
         _buildingState = new BuildingState();
         _placementCalculator = new PlacementCalculator();
         _buildingController = new BuildingController(Main.World, _placementCalculator, _buildingState);
+    
+        _buildingPreview = new BuildingPreview(
+        _camera,
+        this,
+        _buildingState,
+        _placementCalculator,
+        _blockHighLight
+        );
     }
 
     // ========================================================================
@@ -276,10 +267,10 @@ public partial class Player : CharacterBody3D
                 // CAS 2 : On peut poser (mode normal ou mode fin avec surface)
                 // → On pose le bloc
                 // ============================================================
-                else if (_canPlace)
+                else if (_buildingPreview.CanPlace)
                 {
                     // Vérifie qu'il y a de la place (ou mode fin = plusieurs blocs possibles)
-                    if (Main.World.GetBlocks(_nextBlockX, _nextBlockY, _nextBlockZ).Count == 0 || _buildingState.IsFineMode)
+                    if (Main.World.GetBlocks(_buildingPreview.NextBlockX, _buildingPreview.NextBlockY, _buildingPreview.NextBlockZ).Count == 0 || _buildingState.IsFineMode)
                     {
                         // Crée le bloc avec ses propriétés
                         var block = new Block{
@@ -287,16 +278,27 @@ public partial class Player : CharacterBody3D
                             ShapeId = _buildingState.SelectedShapeId,
                             RotationId = _buildingState.SelectedRotationY,
                             RotationX = _buildingState.SelectedRotationX,
-                            SubX = _nextSubX,
-                            SubY = _nextSubY,
-                            SubZ = _nextSubZ
+                            SubX = _buildingPreview.NextSubX,
+                            SubY = _buildingPreview.NextSubY,
+                            SubZ = _buildingPreview.NextSubZ
                         };
 
                         // Ajoute aux données et crée le visuel
-                        bool success= _buildingController.PlaceBlock(_nextBlockX, _nextBlockY, _nextBlockZ, block);
+                        bool success= _buildingController.PlaceBlock(
+                            _buildingPreview.NextBlockX, 
+                            _buildingPreview.NextBlockY,
+                            _buildingPreview.NextBlockZ,
+                            block
+                        );
                         if(success)
                         {
-                            var staticBody = BlockRenderer.CreateBlock(block, new Vector3(_nextBlockX, _nextBlockY, _nextBlockZ));
+                            var staticBody = BlockRenderer.CreateBlock(
+                                block,
+                                new Vector3(
+                                    _buildingPreview.NextBlockX,
+                                    _buildingPreview.NextBlockY,
+                                    _buildingPreview.NextBlockZ)
+                                );
                             Main.Instance.AddChild(staticBody);
                         }  
                     }
@@ -423,215 +425,7 @@ public partial class Player : CharacterBody3D
     public override void _Process(double delta)
     {
         base._Process(delta);
-
-        // Variables pour stocker la position calculée
-        int blockX = 0;
-        int blockY = 0;
-        int blockZ = 0;
-        float offsetX = 0;
-        float offsetY = 0;
-        float offsetZ = 0;
-        int subX = 0;
-        int subY = 0;
-        int subZ = 0;
-
-        // ====================================================================
-        // MODE FIN AVEC SURFACE SÉLECTIONNÉE
-        // ====================================================================
-        if (_fineMode && _fineSurfaceSelected)
-        {
-            // Position du voxel de destination
-            blockX = _fineSurfaceVoxelX;
-            blockY = _fineSurfaceVoxelY;
-            blockZ = _fineSurfaceVoxelZ;
-
-            // ----------------------------------------------------------------
-            // Positionner le plan sur la surface du voxel
-            // ----------------------------------------------------------------
-            // Le plan est décalé de 0.5 dans la direction de la normale
-            // pour être SUR la face, pas au centre du voxel.
-            float planeX = blockX;
-            float planeY = blockY;
-            float planeZ = blockZ;
-
-            if (_fineSurfaceNormal.Y > 0.5f) planeY = blockY - 0.5f;
-            else if (_fineSurfaceNormal.Y < -0.5f) planeY = blockY + 0.5f;
-            else if (_fineSurfaceNormal.X > 0.5f) planeX = blockX - 0.5f;
-            else if (_fineSurfaceNormal.X < -0.5f) planeX = blockX + 0.5f;
-            else if (_fineSurfaceNormal.Z > 0.5f) planeZ = blockZ - 0.5f;
-            else if (_fineSurfaceNormal.Z < -0.5f) planeZ = blockZ + 0.5f;
-
-            var planeOrigin = new Vector3(planeX, planeY, planeZ);
-            var planeNormal = _fineSurfaceNormal;
-
-            // ----------------------------------------------------------------
-            // Intersection rayon / plan
-            // ----------------------------------------------------------------
-            // On calcule où le rayon de la caméra touche le plan.
-            // Formule mathématique : t = (planeOrigin - rayOrigin) · normal / (rayDir · normal)
-            var rayOrigin = _camera.GlobalPosition;
-            var rayDir = -_camera.GlobalTransform.Basis.Z;
-
-            float denom = planeNormal.Dot(rayDir);
-            if (Mathf.Abs(denom) > 0.001f)
-            {
-                float t = (planeOrigin - rayOrigin).Dot(planeNormal) / denom;
-                if (t > 0)
-                {
-                    // Point d'intersection
-                    var hitPoint = rayOrigin + rayDir * t;
-
-                    // --------------------------------------------------------
-                    // Convertir en sous-position (1, 2, ou 3)
-                    // --------------------------------------------------------
-                    // fracX/Y/Z = position relative dans le voxel (0 à 1)
-                    float fracX = hitPoint.X - (blockX - 0.5f);
-                    float fracY = hitPoint.Y - (blockY - 0.5f);
-                    float fracZ = hitPoint.Z - (blockZ - 0.5f);
-
-                    // Clamp pour rester dans le voxel
-                    fracX = Mathf.Clamp(fracX, 0f, 0.999f);
-                    fracY = Mathf.Clamp(fracY, 0f, 0.999f);
-                    fracZ = Mathf.Clamp(fracZ, 0f, 0.999f);
-
-                    // Convertir en sub (1, 2, 3)
-                    // frac * 3 donne 0-2.99, +1 donne 1-3
-                    subX = (int)(fracX * 3) + 1;
-                    subY = (int)(fracY * 3) + 1;
-                    subZ = (int)(fracZ * 3) + 1;
-
-                    // --------------------------------------------------------
-                    // Appliquer le sub fixé ou fixer l'axe de la normale
-                    // --------------------------------------------------------
-                    if (_fineHasFixedSub)
-                    {
-                        // Clic sur poteau → utiliser le sub calculé
-                        subX = _fineFixedSubX;
-                        subY = _fineFixedSubY;
-                        subZ = _fineFixedSubZ;
-                    }
-                    else
-                    {
-                        // Clic sur bloc plein → se coller contre le bloc
-                        // Normale +X = on est à droite du bloc = se coller à gauche = sub 1
-                        if (_fineSurfaceNormal.Y > 0.5f) subY = 1;
-                        else if (_fineSurfaceNormal.Y < -0.5f) subY = 3;
-                        else if (_fineSurfaceNormal.X > 0.5f) subX = 1;
-                        else if (_fineSurfaceNormal.X < -0.5f) subX = 3;
-                        else if (_fineSurfaceNormal.Z > 0.5f) subZ = 1;
-                        else if (_fineSurfaceNormal.Z < -0.5f) subZ = 3;
-                    }
-
-                    // --------------------------------------------------------
-                    // Calculer les offsets selon les dimensions après rotation
-                    // --------------------------------------------------------
-                    var shapeDef = ShapeRegistry.Get(_selectedShapeId);
-                    if (shapeDef != null && shapeDef.CanStackInVoxel)
-                    {
-                        float sizeX = shapeDef.SizeX;
-                        float sizeY = shapeDef.SizeY;
-                        float sizeZ = shapeDef.SizeZ;
-
-                        int rotY = _selectedRotation;
-                        int rotX = _selectedRotationX;
-
-                        // Appliquer les rotations pour calculer les dimensions effectives
-                        // RotX d'abord (échange Y et Z)
-                        if (rotX == 1 || rotX == 3)
-                        {
-                            float temp = sizeY;
-                            sizeY = sizeZ;
-                            sizeZ = temp;
-                        }
-                        // Puis RotY (échange X et Z)
-                        if (rotY == 1 || rotY == 3)
-                        {
-                            float temp = sizeX;
-                            sizeX = sizeZ;
-                            sizeZ = temp;
-                        }
-
-                        // Offset seulement si le bloc est petit sur cet axe
-                        // Formule : (sub - 2) * 0.33 → sub=1:-0.33, sub=2:0, sub=3:+0.33
-                        offsetX = (sizeX < 1) ? (subX - 2f) * 0.33f : 0;
-                        offsetY = (sizeY < 1) ? (subY - 2f) * 0.33f : 0;
-                        offsetZ = (sizeZ < 1) ? (subZ - 2f) * 0.33f : 0;
-
-                        // Reset sub si pas d'offset (bloc plein sur cet axe)
-                        if (sizeX >= 1) subX = 0;
-                        if (sizeY >= 1) subY = 0;
-                        if (sizeZ >= 1) subZ = 0;
-                    }
-
-                    // Stocker pour le clic droit
-                    _nextBlockX = blockX;
-                    _nextBlockY = blockY;
-                    _nextBlockZ = blockZ;
-                    _nextSubX = (byte)subX;
-                    _nextSubY = (byte)subY;
-                    _nextSubZ = (byte)subZ;
-                    _canPlace = true;
-
-                    // Mettre à jour le highlight
-                    _blockHighLight.UpdateHighLight(
-                        _selectedShapeId, 
-                        _selectedRotation, 
-                        _selectedRotationX, 
-                        new Vector3(blockX + offsetX, blockY + offsetY, blockZ + offsetZ)
-                    ); 
-                    
-                    return;
-                }
-            }
-
-            // Rayon ne touche pas le plan → cacher le highlight
-            _canPlace = false;
-            _blockHighLight.UpdateHighLight(0, 0, 0, null);
-        }
-        // ====================================================================
-        // MODE NORMAL (ou mode fin sans surface sélectionnée)
-        // ====================================================================
-        else
-        {
-            var result = Raycast();
-
-            if (result.Count > 0)
-            {
-                var collider = (Node3D)result["collider"];
-                var hitNormal = (Vector3)result["normal"];
-
-                // Position du bloc visé
-                var hitBlockX = Mathf.RoundToInt(collider.GlobalPosition.X);
-                var hitBlockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
-                var hitBlockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
-
-                // Position du voxel adjacent (où on va poser)
-                blockX = hitBlockX + Mathf.RoundToInt(hitNormal.X);
-                blockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
-                blockZ = hitBlockZ + Mathf.RoundToInt(hitNormal.Z);
-
-                // Stocker pour le clic droit
-                _nextBlockX = blockX;
-                _nextBlockY = blockY;
-                _nextBlockZ = blockZ;
-                _nextSubX = 0;
-                _nextSubY = 0;
-                _nextSubZ = 0;
-                _canPlace = true;
-
-                _blockHighLight.UpdateHighLight(
-                    _selectedShapeId, 
-                    _selectedRotation, 
-                    _selectedRotationX, 
-                    new Vector3(blockX, blockY, blockZ)
-                );
-            }
-            else
-            {
-                _canPlace = false;
-                _blockHighLight.UpdateHighLight(0, 0, 0, null);
-            }
-        }
+        _buildingPreview.Update();
     }
     // ========================================================================
     // _PHYSICSPROCESS — Mise à jour physique (60 fois par seconde)
