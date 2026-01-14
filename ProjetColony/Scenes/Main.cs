@@ -15,6 +15,7 @@
 using Godot;
 using ProjetColony.Core.World;
 using ProjetColony.Core.Data;
+using ProjetColony.Engine.Data;
 using ProjetColony.Engine.Rendering;
 using ProjetColony.Engine.UI;
 
@@ -46,6 +47,10 @@ public partial class Main : Node3D
     public override void _Ready()
     {
         base._Ready();
+        
+        // Charger les données AVANT tout le reste
+        DataLoader.LoadAll();
+        
         Instance = this;
 
         // ====================================================================

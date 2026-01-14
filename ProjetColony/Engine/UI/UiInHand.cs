@@ -40,6 +40,7 @@ public partial class UiInHand : Label
     private string _materialName = "Pierre";
     private string _shapeName = "Full";
     private int _rotation = 0;
+    private int _rotationX = 0;
 
     // Mode de placement actuel (Normal ou Fin)
     // Mis à jour par Player.cs quand on appuie sur F.
@@ -54,7 +55,7 @@ public partial class UiInHand : Label
     private void UpdateDisplay()
     {
         string modeName = _fineMode ? "Fin" : "Normal";
-        Text = _materialName + " | " + _shapeName + " | " + (_rotation * 90) + "° | " + modeName;
+        Text = _materialName + " | " + _shapeName + " | Y:" + (_rotation * 90) + "° X:" + (_rotationX * 90) + "° | " + modeName;
     }
 
     // ========================================================================
@@ -93,6 +94,12 @@ public partial class UiInHand : Label
     public void SetRotation(int rotation)
     {
         _rotation = rotation;
+        UpdateDisplay();
+    }
+
+    public void SetRotationX(int rotationX)
+    {
+        _rotationX = rotationX;
         UpdateDisplay();
     }
 

@@ -37,14 +37,18 @@ public static class Shapes
     public const ushort Full = 0;
     
     // Demi-bloc — moitié de hauteur (1×0.5×1)
-    public const ushort Demi = 1;
+    public const ushort Tiers = 1;
     
     // Pente pleine — rampe de 1 bloc de haut
     public const ushort FullSlope = 2;
     
     // Pente demi — rampe de 0.5 bloc de haut (pas encore implémenté)
-    public const ushort DemiSlope = 3;
+    public const ushort TiersSlope = 3;
     
     // Poteau — pilier fin (0.25×1×0.25)
     public const ushort Post = 4;
+
+    public const ushort DeuxTiersSlope = 5;
+
+    public const ushort DeuxTiers = 6;
 }

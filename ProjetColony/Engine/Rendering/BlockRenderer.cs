@@ -31,6 +31,7 @@
 using Godot;
 using ProjetColony.Core.Data;
 using ProjetColony.Core.World;
+using ProjetColony.Core.Data.Registries;
 
 namespace ProjetColony.Engine.Rendering;
 
@@ -69,56 +70,74 @@ public static class BlockRenderer
         // Extrait les propriétés du bloc
         var materialId = block.MaterialId;
         var shapeId = block.ShapeId;
-        var rotationId = block.RotationId;
-        
-        // Applique la rotation au conteneur
-        staticBody.Rotation = new Vector3(0, Mathf.DegToRad(rotationId * 90), 0);
+        var rotationY = block.RotationId;
+        var rotationX = block.RotationX;
+
+        staticBody.Rotation = new Vector3(
+            Mathf.DegToRad(rotationX * 90),
+            Mathf.DegToRad(rotationY * 90),
+            0
+        );
 
         // --------------------------------------------------------------------
         // CALCUL DE L'OFFSET (sous-grille 4×4×4)
         // --------------------------------------------------------------------
-        // SubX/Y/Z = 0 → centré (mode normal)
-        // SubX/Y/Z = 1,2,3,4 → position dans la sous-grille (mode fin)
-        //
-        // Formule : (Sub - 2.5) * 0.25
-        //   Sub=1 → offset = -0.375 (coin gauche/bas/arrière)
-        //   Sub=2 → offset = -0.125
-        //   Sub=3 → offset = +0.125
-        //   Sub=4 → offset = +0.375 (coin droit/haut/avant)
+        // On n'applique l'offset que sur les axes où le bloc est PETIT après rotation.
         
-        float offsetX;
-        if (block.SubX == 0)
-        {
-            offsetX = 0;
-        }
-        else
-        {
-            offsetX = (block.SubX - 2.5f) * 0.25f;
-        }
+        float offsetX = 0;
+        float offsetY = 0;
+        float offsetZ = 0;
 
-        float offsetY;
-        if (block.SubY == 0)
+        var shapeDef = ShapeRegistry.Get(block.ShapeId);
+        if (shapeDef != null && shapeDef.CanStackInVoxel)
         {
-            offsetY = 0;
-        }
-        else
-        {
-            offsetY = (block.SubY - 2.5f) * 0.25f;
-        }
+            float sizeX = shapeDef.SizeX;
+            float sizeY = shapeDef.SizeY;
+            float sizeZ = shapeDef.SizeZ;
 
-        float offsetZ;
-        if (block.SubZ == 0)
-        {
-            offsetZ = 0;
-        }
-        else
-        {
-            offsetZ = (block.SubZ - 2.5f) * 0.25f;
+            // Calculer les dimensions effectives après rotation
+            // L'ordre compte : on applique RotX sur les axes locaux après RotY
+            int rotY = block.RotationId;      // ou block.RotationId dans BlockRenderer
+            int rotX = block.RotationX;     // ou block.RotationX dans BlockRenderer
+
+            // RotX d'abord (sur axes locaux)
+            if (rotX == 1 || rotX == 3)
+            {
+                float temp = sizeY;
+                sizeY = sizeZ;
+                sizeZ = temp;
+            }
+
+            // Puis RotY (sur axes monde)
+            if (rotY == 1 || rotY == 3)
+            {
+                float temp = sizeX;
+                sizeX = sizeZ;
+                sizeZ = temp;
+            }
+
+            GD.Print("RotY:" + block.RotationId + " RotX:" + block.RotationX + " → Size:" + sizeX + "," + sizeY + "," + sizeZ);
+            GD.Print("Sub:" + block.SubX + "," + block.SubY + "," + block.SubZ);
+
+            // Offset seulement si petit sur cet axe ET sub != 0
+            if (block.SubX != 0 && sizeX < 1)
+            {
+                offsetX = (block.SubX - 2f) * 0.33f;
+            }
+            if (block.SubY != 0 && sizeY < 1)
+            {
+                offsetY = (block.SubY - 2f) * 0.33f;
+            }
+            if (block.SubZ != 0 && sizeZ < 1)
+            {
+                offsetZ = (block.SubZ - 2f) * 0.33f;
+            }
+            GD.Print("RENDERER - offset:" + offsetX + "," + offsetY + "," + offsetZ);
         }
 
         // Le StaticBody reste au centre du voxel
         // L'offset sera appliqué aux enfants (mesh et collision)
-        staticBody.Position = position;
+        staticBody.Position = position + new Vector3(offsetX, offsetY, offsetZ);
 
         // --------------------------------------------------------------------
         // LE MESH — Ce qu'on voit à l'écran
@@ -132,46 +151,49 @@ public static class BlockRenderer
         // --------------------------------------------------------------------
         // Chaque forme a son propre mesh et potentiellement un décalage
         // de position pour être bien alignée avec la grille.
-        BoxMesh shape;
+        BoxMesh boxShape;
+        
         if (shapeId == Shapes.Full)
         {
-            // Bloc plein : cube 1×1×1 (taille par défaut de BoxMesh)
-            shape = new BoxMesh();
-            meshInstance.Mesh = shape;  
+            boxShape = new BoxMesh();
+            meshInstance.Mesh = boxShape;
         }
-        else if (shapeId == Shapes.Demi)
+        else if (shapeId == Shapes.Tiers)
         {
-            // Demi-bloc : cube 1×0.5×1
-            // Décalé de -0.25 en Y pour que le BAS du bloc soit à Y=0
-            // (sinon il serait centré et flotterait)
-            shape = new BoxMesh();
-            meshInstance.Position = new Vector3(0.0f, -0.25f, 0.0f);
-            shape.Size = new Vector3(1.0f, 0.5f, 1.0f);
-            meshInstance.Mesh = shape;
+            boxShape = new BoxMesh();
+            boxShape.Size = new Vector3(1.0f, 0.33f, 1.0f);
+            meshInstance.Position = new Vector3(0.0f, -0.335f, 0.0f);
+            meshInstance.Mesh = boxShape;
+        }
+        else if (shapeId == Shapes.DeuxTiers)
+        {
+            boxShape = new BoxMesh();
+            boxShape.Size = new Vector3(1.0f, 0.66f, 1.0f);
+            meshInstance.Position = new Vector3(0.0f, -0.17f, 0.0f);
+            meshInstance.Mesh = boxShape;
         }
         else if (shapeId == Shapes.Post)
         {
-            // Poteau : cube fin 0.25×1×0.25
-            shape = new BoxMesh();
-            meshInstance.Position = new Vector3(0.0f, 0.0f, 0.0f);
-            shape.Size = new Vector3(0.25f, 1.0f, 0.25f);
-            meshInstance.Mesh = shape;
+            boxShape = new BoxMesh();
+            boxShape.Size = new Vector3(0.33f, 1.0f, 0.33f);
+            meshInstance.Mesh = boxShape;
         }
         else if (shapeId == Shapes.FullSlope)
         {
-            // Pente pleine : mesh triangulaire créé à la main
-            // Pas de BoxMesh ici — on utilise un ArrayMesh custom
-            meshInstance.Mesh = CreateSlopeMesh();
+            meshInstance.Mesh = CreateSlopeMesh(1.0f);
         }
-        else if (shapeId == Shapes.DemiSlope)
+        else if (shapeId == Shapes.TiersSlope)
         {
-            meshInstance.Mesh = CreateDemiSlopeMesh();
+            meshInstance.Mesh = CreateSlopeMesh(0.33f);
+        }
+        else if (shapeId == Shapes.DeuxTiersSlope)
+        {
+            meshInstance.Mesh = CreateSlopeMesh(0.66f);
         }
         else
         {
-            // Forme inconnue : bloc plein par défaut
-            shape = new BoxMesh();
-            meshInstance.Mesh = shape;
+            boxShape = new BoxMesh();
+            meshInstance.Mesh = boxShape;
         }
 
         // --------------------------------------------------------------------
@@ -217,42 +239,42 @@ public static class BlockRenderer
         
         var collisionShape = new CollisionShape3D();
 
-        if (shapeId == Shapes.Demi)
+        if (shapeId == Shapes.Tiers)
         {
-            var boxShape = new BoxShape3D();
-            boxShape.Size = new Vector3(1.0f, 0.5f, 1.0f);
-            collisionShape.Shape = boxShape;
-            collisionShape.Position = new Vector3(0, -0.25f, 0);
+            var boxCol = new BoxShape3D();
+            boxCol.Size = new Vector3(1.0f, 0.33f, 1.0f);
+            collisionShape.Shape = boxCol;
+            collisionShape.Position = new Vector3(0, -0.335f, 0);
+        }
+        else if (shapeId == Shapes.DeuxTiers)
+        {
+            var boxCol = new BoxShape3D();
+            boxCol.Size = new Vector3(1.0f, 0.66f, 1.0f);
+            collisionShape.Shape = boxCol;
+            collisionShape.Position = new Vector3(0, -0.17f, 0);
         }
         else if (shapeId == Shapes.FullSlope)
         {
-            collisionShape.Shape = CreateSlopeCollider();
+            collisionShape.Shape = CreateSlopeCollider(1.0f);
         }
-        else if (shapeId == Shapes.DemiSlope)
+        else if (shapeId == Shapes.TiersSlope)
         {
-            collisionShape.Shape = CreateDemiSlopeCollider();
+            collisionShape.Shape = CreateSlopeCollider(0.33f);
+        }
+        else if (shapeId == Shapes.DeuxTiersSlope)
+        {
+            collisionShape.Shape = CreateSlopeCollider(0.66f);
         }
         else if (shapeId == Shapes.Post)
         {
-            var boxShape = new BoxShape3D();
-            boxShape.Size = new Vector3(0.25f, 1.0f, 0.25f);
-            collisionShape.Shape = boxShape;
+            var boxCol = new BoxShape3D();
+            boxCol.Size = new Vector3(0.33f, 1.0f, 0.33f);
+            collisionShape.Shape = boxCol;
         }
         else
         {
             collisionShape.Shape = new BoxShape3D();
         }
-
-        // --------------------------------------------------------------------
-        // APPLICATION DE L'OFFSET (sous-grille)
-        // --------------------------------------------------------------------
-        // On décale le mesh et la collision DANS le StaticBody.
-        // Le StaticBody reste au centre du voxel pour que le raycast
-        // puisse identifier correctement le voxel.
-        //
-        // "+=" car certaines formes ont déjà un offset (ex: Demi à -0.25 en Y)
-        meshInstance.Position += new Vector3(offsetX, offsetY, offsetZ);
-        collisionShape.Position += new Vector3(offsetX, offsetY, offsetZ);
         
         // --------------------------------------------------------------------
         // ASSEMBLAGE — Hiérarchie de nodes
@@ -299,25 +321,35 @@ public static class BlockRenderer
         {
             return new BoxMesh();
         }
-        else if (shapeId == Shapes.Demi)
+        else if (shapeId == Shapes.Tiers)
         {
             var mesh = new BoxMesh();
-            mesh.Size = new Vector3(1.0f, 0.5f, 1.0f);
+            mesh.Size = new Vector3(1.0f, 0.33f, 1.0f);
+            return mesh;
+        }
+        else if (shapeId == Shapes.DeuxTiers)
+        {
+            var mesh = new BoxMesh();
+            mesh.Size = new Vector3(1.0f, 0.66f, 1.0f);
             return mesh;
         }
         else if (shapeId == Shapes.Post)
         {
             var mesh = new BoxMesh();
-            mesh.Size = new Vector3(0.25f, 1.0f, 0.25f);
+            mesh.Size = new Vector3(0.33f, 1.0f, 0.33f);
             return mesh;
         }
         else if (shapeId == Shapes.FullSlope)
         {
-            return CreateSlopeMesh();
+            return CreateSlopeMesh(1.0f);
         }
-        else if (shapeId == Shapes.DemiSlope)
+        else if (shapeId == Shapes.TiersSlope)
         {
-            return CreateDemiSlopeMesh();
+            return CreateSlopeMesh(0.33f);
+        }
+        else if (shapeId == Shapes.DeuxTiersSlope)
+        {
+            return CreateSlopeMesh(0.66f);
         }
         else
         {
@@ -348,98 +380,28 @@ public static class BlockRenderer
     //
     // La pente descend de l'arrière (Z = -0.5) vers l'avant (Z = +0.5).
     // ========================================================================
-    private static Mesh CreateSlopeMesh()
+private static Mesh CreateSlopeMesh(float height)
     {
-        // --------------------------------------------------------------------
-        // LES VERTICES — Les 6 coins de la pente
-        // --------------------------------------------------------------------
-        // Coordonnées de -0.5 à +0.5 car le bloc est centré sur (0,0,0).
-        // Pas de sommets "haut avant" — c'est là que la pente descend.
-        Vector3[] vertices = new Vector3[]
-        {
-            new Vector3(-0.5f, -0.5f, -0.5f),  // 0 : bas arrière gauche
-            new Vector3( 0.5f, -0.5f, -0.5f),  // 1 : bas arrière droit
-            new Vector3( 0.5f, -0.5f,  0.5f),  // 2 : bas avant droit
-            new Vector3(-0.5f, -0.5f,  0.5f),  // 3 : bas avant gauche
-            new Vector3(-0.5f,  0.5f, -0.5f),  // 4 : haut arrière gauche
-            new Vector3( 0.5f,  0.5f, -0.5f),  // 5 : haut arrière droit
-        };
-
-        // --------------------------------------------------------------------
-        // LES INDICES — Quels vertices forment chaque triangle
-        // --------------------------------------------------------------------
-        // L'ordre est ANTI-HORAIRE vu de l'extérieur (convention Godot).
-        // Cet ordre détermine quel côté de la face est "visible".
-        //
-        // 5 faces au total = 8 triangles :
-        //   - Bas : 2 triangles (rectangle)
-        //   - Arrière : 2 triangles (rectangle)
-        //   - Gauche : 1 triangle
-        //   - Droite : 1 triangle
-        //   - Pente : 2 triangles (rectangle incliné)
-        int[] indices = new int[]
-        {
-            // Bas (2 triangles)
-            0, 2, 1,
-            0, 3, 2,
-            // Arrière (2 triangles)
-            0, 5, 1,
-            0, 4, 5,
-            // Gauche (1 triangle)
-            0, 4, 3,
-            // Droite (1 triangle)
-            1, 5, 2,
-            // Pente (2 triangles)
-            2, 5, 4,
-            2, 4, 3,
-        };
-
-        // --------------------------------------------------------------------
-        // ASSEMBLAGE DU MESH
-        // --------------------------------------------------------------------
-        // ArrayMesh permet de créer un mesh à partir de tableaux de données.
-        // C'est du "boilerplate" Godot — la structure est toujours la même.
-        var arrays = new Godot.Collections.Array();
-        arrays.Resize((int)Mesh.ArrayType.Max);
-        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-        arrays[(int)Mesh.ArrayType.Index] = indices;
-
-        var mesh = new ArrayMesh();
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-
-        return mesh;
-    }
-
-    // ========================================================================
-    // CREATEDEMISLOPEMESH — Crée un mesh de demi-pente
-    // ========================================================================
-    // Même principe que CreateSlopeMesh, mais moitié moins haute.
-    // Les sommets hauts sont à Y = 0 au lieu de Y = 0.5.
-    private static Mesh CreateDemiSlopeMesh()
-    {
-        Vector3[] vertices = new Vector3[]
-        {
-            new Vector3(-0.5f, -0.5f, -0.5f),  // 0 : bas arrière gauche
-            new Vector3( 0.5f, -0.5f, -0.5f),  // 1 : bas arrière droit
-            new Vector3( 0.5f, -0.5f,  0.5f),  // 2 : bas avant droit
-            new Vector3(-0.5f, -0.5f,  0.5f),  // 3 : bas avant gauche
-            new Vector3(-0.5f,  0.0f, -0.5f),  // 4 : haut arrière gauche (Y=0)
-            new Vector3( 0.5f,  0.0f, -0.5f),  // 5 : haut arrière droit (Y=0)
-        };
+        float topY = -0.5f + height;
         
+        Vector3[] vertices = new Vector3[]
+        {
+            new Vector3(-0.5f, -0.5f, -0.5f),  // 0 : bas arrière gauche
+            new Vector3( 0.5f, -0.5f, -0.5f),  // 1 : bas arrière droit
+            new Vector3( 0.5f, -0.5f,  0.5f),  // 2 : bas avant droit
+            new Vector3(-0.5f, -0.5f,  0.5f),  // 3 : bas avant gauche
+            new Vector3(-0.5f,  topY, -0.5f),  // 4 : haut arrière gauche
+            new Vector3( 0.5f,  topY, -0.5f),  // 5 : haut arrière droit
+        };
+
         int[] indices = new int[]
         {
-            // Bas (2 triangles)
             0, 2, 1,
             0, 3, 2,
-            // Arrière (2 triangles)
             0, 5, 1,
             0, 4, 5,
-            // Gauche (1 triangle)
             0, 4, 3,
-            // Droite (1 triangle)
             1, 5, 2,
-            // Pente (2 triangles)
             2, 5, 4,
             2, 4, 3,
         };
@@ -455,66 +417,18 @@ public static class BlockRenderer
         return mesh;
     }
 
-    // ========================================================================
-    // CREATESLOPECOLLIDER — Crée la forme de collision pour une pente
-    // ========================================================================
-    // Pour que le joueur puisse MARCHER sur une pente (pas juste la voir),
-    // il faut une collision qui épouse la forme triangulaire.
-    //
-    // POURQUOI PAS UN BOXSHAPE3D ?
-    // BoxShape3D = cube. Si on l'utilise pour une pente, le joueur se cogne
-    // contre un mur invisible ou flotte au-dessus de la surface.
-    //
-    // SOLUTION : ConvexPolygonShape3D
-    // C'est une forme de collision définie par des points (vertices).
-    // Godot calcule automatiquement l'enveloppe convexe (la "coque" qui
-    // englobe tous les points). Parfait pour nos formes simples !
-    //
-    // Les points sont les mêmes que le mesh visuel (CreateSlopeMesh).
-    // Ainsi, la collision correspond exactement à ce qu'on voit.
-    private static ConvexPolygonShape3D CreateSlopeCollider()
+    private static ConvexPolygonShape3D CreateSlopeCollider(float height)
     {
-        // Les 6 sommets de la pente (même chose que le mesh)
-        // Pas de sommets "haut avant" — c'est là que la pente descend
+        float topY = -0.5f + height;
+        
         Vector3[] points = new Vector3[]
         {
-            new Vector3(-0.50f, -0.5f, -0.50f),  // 0 : bas arrière gauche
-            new Vector3( 0.50f, -0.5f, -0.50f),  // 1 : bas arrière droit
-            new Vector3( 0.50f, -0.5f,  0.50f),  // 2 : bas avant droit
-            new Vector3(-0.50f, -0.5f,  0.50f),  // 3 : bas avant gauche
-            new Vector3(-0.50f,  0.5f, -0.50f),  // 4 : haut arrière gauche
-            new Vector3( 0.50f,  0.5f, -0.50f),  // 5 : haut arrière droit
-        };
-
-        // Crée la forme et lui donne les points
-        // Godot calcule l'enveloppe convexe automatiquement
-        var shape = new ConvexPolygonShape3D();
-        shape.Points = points;
-        return shape;
-    }
-
-    // ========================================================================
-    // CREATEDEMISLOPECOLLIDER — Collision pour une demi-pente
-    // ========================================================================
-    // Même principe que CreateSlopeCollider, mais moitié moins haute.
-    //
-    // DIFFÉRENCE AVEC FULLSLOPE :
-    // - FullSlope : sommets hauts à Y = +0.5 (pente de 1 bloc de haut)
-    // - DemiSlope : sommets hauts à Y = 0.0 (pente de 0.5 bloc de haut)
-    //
-    // Cela donne une pente plus douce (~26° au lieu de 45°).
-    // Utile pour des rampes d'accès ou des transitions subtiles.
-    private static ConvexPolygonShape3D CreateDemiSlopeCollider()
-    {
-        // Les 6 sommets — noter que Y max = 0.0 (pas 0.5)
-        Vector3[] points = new Vector3[]
-        {
-            new Vector3(-0.5f, -0.5f, -0.5f),  // 0 : bas arrière gauche
-            new Vector3( 0.5f, -0.5f, -0.5f),  // 1 : bas arrière droit
-            new Vector3( 0.5f, -0.5f,  0.5f),  // 2 : bas avant droit
-            new Vector3(-0.5f, -0.5f,  0.5f),  // 3 : bas avant gauche
-            new Vector3(-0.5f,  0.0f, -0.5f),  // 4 : haut arrière gauche (Y=0, pas 0.5)
-            new Vector3( 0.5f,  0.0f, -0.5f),  // 5 : haut arrière droit (Y=0, pas 0.5)
+            new Vector3(-0.5f, -0.5f, -0.5f),
+            new Vector3( 0.5f, -0.5f, -0.5f),
+            new Vector3( 0.5f, -0.5f,  0.5f),
+            new Vector3(-0.5f, -0.5f,  0.5f),
+            new Vector3(-0.5f,  topY, -0.5f),
+            new Vector3( 0.5f,  topY, -0.5f),
         };
 
         var shape = new ConvexPolygonShape3D();

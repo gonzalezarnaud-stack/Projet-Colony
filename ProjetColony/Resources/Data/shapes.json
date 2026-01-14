@@ -1,0 +1,163 @@
+[
+    {
+        "id": 0,
+        "name": "Full",
+        "displayName": "Bloc Plein",
+        
+        "sizeX": 1.0,
+        "sizeY": 1.0,
+        "sizeZ": 1.0,
+        "offsetY": 0.0,
+        "meshType": "box",
+        
+        "collisionType": "box",
+        "walkableAngle": 0,
+        
+        "isSymmetric": false,
+        "isClimbable": false,
+        "canStackInVoxel": false,
+        "subGridSize": 1.0,
+        
+        "blocksLight": true,
+        "blocksFluid": true,
+        "blocksGas": true
+    },
+    {
+        "id": 1,
+        "name": "Tiers",
+        "displayName": "Tiers de Bloc",
+        
+        "sizeX": 1.0,
+        "sizeY": 0.33,
+        "sizeZ": 1.0,
+        "offsetY": -0.335,
+        "meshType": "box",
+        
+        "collisionType": "box",
+        "walkableAngle": 0,
+        
+        "isSymmetric": false,
+        "isClimbable": true,
+        "canStackInVoxel": false,
+        "subGridSize": 1.0,
+        
+        "blocksLight": true,
+        "blocksFluid": true,
+        "blocksGas": false
+    },
+    {
+        "id": 2,
+        "name": "FullSlope",
+        "displayName": "Pente Pleine",
+        
+        "sizeX": 1.0,
+        "sizeY": 1.0,
+        "sizeZ": 1.0,
+        "offsetY": 0.0,
+        "meshType": "slope",
+        
+        "collisionType": "convex",
+        "walkableAngle": 45,
+        
+        "isSymmetric": false,
+        "isClimbable": false,
+        "canStackInVoxel": false,
+        "subGridSize": 1.0,
+        
+        "blocksLight": true,
+        "blocksFluid": true,
+        "blocksGas": false
+    },
+    {
+        "id": 3,
+        "name": "TiersSlope",
+        "displayName": "Pente Tiers",
+        
+        "sizeX": 1.0,
+        "sizeY": 0.33,
+        "sizeZ": 1.0,
+        "offsetY": 0.0,
+        "meshType": "tiersSlope",
+        
+        "collisionType": "convex",
+        "walkableAngle": 18,
+        
+        "isSymmetric": false,
+        "isClimbable": true,
+        "canStackInVoxel": false,
+        "subGridSize": 1.0,
+        
+        "blocksLight": false,
+        "blocksFluid": true,
+        "blocksGas": false
+    },
+    {
+        "id": 4,
+        "name": "Post",
+        "displayName": "Poteau",
+        
+        "sizeX": 0.33,
+        "sizeY": 1.0,
+        "sizeZ": 0.33,
+        "offsetY": 0.0,
+        "meshType": "box",
+        
+        "collisionType": "box",
+        "walkableAngle": 0,
+        
+        "isSymmetric": true,
+        "isClimbable": false,
+        "canStackInVoxel": true,
+        "subGridSize": 0.33,
+        
+        "blocksLight": false,
+        "blocksFluid": false,
+        "blocksGas": false
+    },
+    {
+        "id": 5,
+        "name": "DeuxTiersSlope",
+        "displayName": "Pente Deux-Tiers",
+        
+        "sizeX": 1.0,
+        "sizeY": 0.66,
+        "sizeZ": 1.0,
+        "offsetY": 0.0,
+        "meshType": "deuxTiersSlope",
+        
+        "collisionType": "convex",
+        "walkableAngle": 33,
+        
+        "isSymmetric": false,
+        "isClimbable": true,
+        "canStackInVoxel": false,
+        "subGridSize": 1.0,
+        
+        "blocksLight": false,
+        "blocksFluid": true,
+        "blocksGas": false
+    },
+    {
+        "id": 6,
+        "name": "DeuxTiers",
+        "displayName": "Deux Tiers de Bloc",
+        
+        "sizeX": 1.0,
+        "sizeY": 0.66,
+        "sizeZ": 1.0,
+        "offsetY": -0.335,
+        "meshType": "box",
+        
+        "collisionType": "box",
+        "walkableAngle": 0,
+        
+        "isSymmetric": false,
+        "isClimbable": true,
+        "canStackInVoxel": false,
+        "subGridSize": 1.0,
+        
+        "blocksLight": true,
+        "blocksFluid": true,
+        "blocksGas": false
+    }
+]

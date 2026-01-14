@@ -1,0 +1,226 @@
+[
+    {
+        "id": 0,
+        "name": "Air",
+        "displayName": "Air",
+        
+        "colorR": 0.0,
+        "colorG": 0.0,
+        "colorB": 0.0,
+        "colorA": 0.0,
+        "texture": null,
+        
+        "isSolid": false,
+        "isLiquid": false,
+        "isGas": true,
+        "isFlammable": false,
+        
+        "density": 1.2,
+        "hardness": 0,
+        "miningLevel": 0,
+        
+        "thermalConductivity": 0.024,
+        "specificHeat": 1.0,
+        "meltingPoint": null,
+        "boilingPoint": null,
+        "ignitionPoint": null,
+        
+        "stateWhenMelted": null,
+        "stateWhenBoiled": null,
+        "stateWhenCooled": null,
+        "stateWhenFrozen": null
+    },
+    {
+        "id": 1,
+        "name": "Stone",
+        "displayName": "Pierre",
+        
+        "colorR": 0.5,
+        "colorG": 0.5,
+        "colorB": 0.5,
+        "colorA": 1.0,
+        "texture": null,
+        
+        "isSolid": true,
+        "isLiquid": false,
+        "isGas": false,
+        "isFlammable": false,
+        
+        "density": 2700.0,
+        "hardness": 3,
+        "miningLevel": 1,
+        
+        "thermalConductivity": 2.0,
+        "specificHeat": 0.84,
+        "meltingPoint": 1200,
+        "boilingPoint": 2500,
+        "ignitionPoint": null,
+        
+        "stateWhenMelted": "Magma",
+        "stateWhenBoiled": null,
+        "stateWhenCooled": null,
+        "stateWhenFrozen": null
+    },
+    {
+        "id": 2,
+        "name": "Dirt",
+        "displayName": "Terre",
+        
+        "colorR": 0.6,
+        "colorG": 0.3,
+        "colorB": 0.1,
+        "colorA": 1.0,
+        "texture": null,
+        
+        "isSolid": true,
+        "isLiquid": false,
+        "isGas": false,
+        "isFlammable": false,
+        
+        "density": 1500.0,
+        "hardness": 1,
+        "miningLevel": 0,
+        
+        "thermalConductivity": 0.5,
+        "specificHeat": 0.8,
+        "meltingPoint": null,
+        "boilingPoint": null,
+        "ignitionPoint": null,
+        
+        "stateWhenMelted": null,
+        "stateWhenBoiled": null,
+        "stateWhenCooled": null,
+        "stateWhenFrozen": null
+    },
+    {
+        "id": 3,
+        "name": "Grass",
+        "displayName": "Herbe",
+        
+        "colorR": 0.2,
+        "colorG": 0.8,
+        "colorB": 0.2,
+        "colorA": 1.0,
+        "texture": null,
+        
+        "isSolid": true,
+        "isLiquid": false,
+        "isGas": false,
+        "isFlammable": true,
+        
+        "density": 1400.0,
+        "hardness": 1,
+        "miningLevel": 0,
+        
+        "thermalConductivity": 0.4,
+        "specificHeat": 0.8,
+        "meltingPoint": null,
+        "boilingPoint": null,
+        "ignitionPoint": 300,
+        
+        "stateWhenMelted": null,
+        "stateWhenBoiled": null,
+        "stateWhenCooled": null,
+        "stateWhenFrozen": null,
+        
+        "burnsInto": "Dirt"
+    },
+    {
+        "id": 4,
+        "name": "Water",
+        "displayName": "Eau",
+        
+        "colorR": 0.2,
+        "colorG": 0.4,
+        "colorB": 0.8,
+        "colorA": 0.7,
+        "texture": null,
+        
+        "isSolid": false,
+        "isLiquid": true,
+        "isGas": false,
+        "isFlammable": false,
+        
+        "density": 1000.0,
+        "hardness": 0,
+        "miningLevel": 0,
+        
+        "thermalConductivity": 0.6,
+        "specificHeat": 4.18,
+        "meltingPoint": 0,
+        "boilingPoint": 100,
+        "ignitionPoint": null,
+        
+        "stateWhenMelted": null,
+        "stateWhenBoiled": "Steam",
+        "stateWhenCooled": null,
+        "stateWhenFrozen": "Ice"
+    },
+    {
+        "id": 5,
+        "name": "Ice",
+        "displayName": "Glace",
+        
+        "colorR": 0.7,
+        "colorG": 0.9,
+        "colorB": 1.0,
+        "colorA": 0.9,
+        "texture": null,
+        
+        "isSolid": true,
+        "isLiquid": false,
+        "isGas": false,
+        "isFlammable": false,
+        
+        "density": 917.0,
+        "hardness": 1,
+        "miningLevel": 0,
+        
+        "thermalConductivity": 2.2,
+        "specificHeat": 2.1,
+        "meltingPoint": 0,
+        "boilingPoint": 100,
+        "ignitionPoint": null,
+        
+        "stateWhenMelted": "Water",
+        "stateWhenBoiled": "Steam",
+        "stateWhenCooled": null,
+        "stateWhenFrozen": null
+    },
+    {
+        "id": 6,
+        "name": "Magma",
+        "displayName": "Magma",
+        
+        "colorR": 1.0,
+        "colorG": 0.3,
+        "colorB": 0.0,
+        "colorA": 1.0,
+        "texture": null,
+        
+        "isSolid": false,
+        "isLiquid": true,
+        "isGas": false,
+        "isFlammable": false,
+        
+        "density": 2500.0,
+        "hardness": 0,
+        "miningLevel": 0,
+        
+        "thermalConductivity": 1.5,
+        "specificHeat": 1.0,
+        "meltingPoint": 700,
+        "boilingPoint": 2500,
+        "ignitionPoint": null,
+        
+        "stateWhenMelted": null,
+        "stateWhenBoiled": null,
+        "stateWhenCooled": "Stone",
+        "stateWhenFrozen": "Stone",
+        
+        "emitsLight": true,
+        "lightLevel": 15,
+        "emitsHeat": true,
+        "heatLevel": 1200
+    }
+]

@@ -55,6 +55,8 @@ public struct Block
     // Note : par défaut, RotationId = 0 car les struct sont initialisées à zéro.
     public ushort RotationId;
 
+    public ushort RotationX;
+
     // ------------------------------------------------------------------------
     // LA SOUS-POSITION (Sous-grille 4×4×4)
     // ------------------------------------------------------------------------

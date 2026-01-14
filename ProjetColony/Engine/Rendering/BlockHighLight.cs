@@ -76,11 +76,10 @@ public partial class BlockHighLight : MeshInstance3D
     //
     // Vector3? (avec ?) est un type "nullable" — il peut contenir une valeur
     // OU être null. C'est parfait pour "il y a un bloc" vs "il n'y a rien".
-    public void UpdateHighLight(ushort shapeId, ushort rotationId, Vector3? position)
+    public void UpdateHighLight(ushort shapeId, ushort rotationY, ushort rotationX, Vector3? position)
     {
         if (position == null)
         {
-            // Pas de bloc visé → cacher le highlight
             Visible = false;
         }
         else
@@ -88,17 +87,22 @@ public partial class BlockHighLight : MeshInstance3D
             Mesh = BlockRenderer.GetMeshForShape(shapeId);
 
             float offsetY = 0;
-            if (shapeId == Shapes.Demi)
+            if (shapeId == Shapes.Tiers)
             {
-                offsetY = -0.25f;
+                offsetY = -0.335f;
+            }
+            else if (shapeId == Shapes.DeuxTiers)
+            {
+                offsetY = -0.17f;
             }
 
-            // Bloc visé → déplacer et afficher le highlight
-            // GlobalPosition car on veut la position dans le monde,
-            // pas relative au Player (qui est notre parent).
             GlobalPosition = position.Value + new Vector3(0.001f, offsetY + 0.001f, 0.001f);
 
-            GlobalRotation = new Vector3(0, Mathf.DegToRad(rotationId * 90), 0);
+            GlobalRotation = new Vector3(
+                Mathf.DegToRad(rotationX * 90),
+                Mathf.DegToRad(rotationY * 90),
+                0
+            );
             
             Visible = true;
         }
