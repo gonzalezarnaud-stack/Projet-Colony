@@ -36,11 +36,12 @@ public class PlacementCalculator
     //
     // SOUS-GRILLE
     // SubGridSize = nombre de divisions par axe (3 = grille 3×3×3)
-    // SubGridSpacing = écart entre chaque position (~0.33 mètre)
-    //   - Formule : offset = (sub - 2) × 0.33
-    //     → sub=1 : offset = -0.33 (décalé vers le négatif)
-    //     → sub=2 : offset = 0 (centré)
-    //     → sub=3 : offset = +0.33 (décalé vers le positif)
+    // SubGridSpacing = écart entre chaque position
+    //   - Calculé pour que les poteaux (0.33 de large) touchent les bords du voxel
+    //   - Formule : (VoxelSize - PostWidth) / 2 = (1 - 0.33) / 2 = 0.335
+    //   - Sub=1 : offset = -0.335 (bord gauche du poteau à -0.5)
+    //   - Sub=2 : offset = 0 (centré)
+    //   - Sub=3 : offset = +0.335 (bord droit du poteau à +0.5)
     //
     // POSITIONS DANS LA SOUS-GRILLE
     // SubNone = 0 → pas de sous-position (bloc plein, centré)
@@ -54,7 +55,7 @@ public class PlacementCalculator
     //   - Si normale < -0.5 → pointe vers le négatif
     public const float VoxelSize = 1.0f;
     public const int SubGridSize = 3;
-    public const float SubGridSpacing = 0.33f;
+    public const float SubGridSpacing = 0.335f;
     public const int SubNone = 0;
     public const int SubFirst = 1;
     public const int SubCenter = 2;
@@ -159,7 +160,7 @@ public class PlacementCalculator
     }
 
     // ------------------------------------------------------------------------
-    // CALCULATEOFFSET — Convertit un sub (1, 2, 3) en offset (-0.33, 0, +0.33)
+    // CALCULATEOFFSET — Convertit un sub (1, 2, 3) en offset (-0.335, 0, +0.335)
     // ------------------------------------------------------------------------
     // PARAMÈTRE :
     //   sub = position dans la sous-grille (1, 2, ou 3)
@@ -168,9 +169,9 @@ public class PlacementCalculator
     //   Le décalage en mètres pour afficher le bloc à la bonne position.
     //
     // FORMULE : (sub - 2) × SubGridSpacing
-    //   sub=1 → (1-2) × 0.33 = -0.33 (décalé vers gauche/bas/arrière)
-    //   sub=2 → (2-2) × 0.33 = 0     (centré)
-    //   sub=3 → (3-2) × 0.33 = +0.33 (décalé vers droite/haut/avant)
+    //   sub=1 → (1-2) × 0.335 = -0.335 (décalé vers gauche/bas/arrière)
+    //   sub=2 → (2-2) × 0.335 = 0     (centré)
+    //   sub=3 → (3-2) × 0.335 = +0.335 (décalé vers droite/haut/avant)
     //
     // POURQUOI "-2" ?
     // On veut que sub=2 (le centre) donne offset=0.

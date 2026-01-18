@@ -180,99 +180,23 @@ public partial class Player : CharacterBody3D
                     }
                 }
             }
-            // ----------------------------------------------------------------
+// ----------------------------------------------------------------
             // CLIC DROIT — POSER UN BLOC
             // ----------------------------------------------------------------
             else if (mouseButton.ButtonIndex == MouseButton.Right)
             {
-                // ============================================================
-                // CAS 1 : Mode fin, pas de surface sélectionnée
-                // → On sélectionne la surface de travail
-                // ============================================================
-                if (_buildingState.IsFineMode && !_buildingState.HasSelectedSurface)
+                if (_buildingPreview.CanPlace)
                 {
-                    var result = Raycast();
-                    if (result.Count > 0)
+                    var blocksAtPosition = Main.World.GetBlocks(
+                        _buildingPreview.NextBlockX, 
+                        _buildingPreview.NextBlockY, 
+                        _buildingPreview.NextBlockZ
+                    );
+                    
+                    if (blocksAtPosition.Count == 0 || _buildingState.IsFineMode)
                     {
-                        var hitNormal = (Vector3)result["normal"];
-                        var collider = (Node3D)result["collider"];
-
-                        // Position du bloc visé
-                        var hitBlockX = Mathf.RoundToInt(collider.GlobalPosition.X);
-                        var hitBlockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
-                        var hitBlockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
-
-                        // Vérifier si le bloc visé peut contenir plusieurs blocs
-                        int hitShapeId = collider.HasMeta("ShapeId") ? (int)collider.GetMeta("ShapeId") : Shapes.Full;
-                        var hitShapeDef = ShapeRegistry.Get((ushort)hitShapeId);
-                        bool hitCanStack = hitShapeDef != null && hitShapeDef.CanStackInVoxel;
-
-                        if (hitCanStack)
+                        var block = new Block
                         {
-                            // --------------------------------------------------
-                            // BLOC STACKABLE (poteau) — Rester dans le même voxel
-                            // et se coller au bloc existant
-                            // --------------------------------------------------
-                            
-                            // Récupérer la sous-position du bloc visé
-                            int hitSubX = collider.HasMeta("SubX") ? (int)collider.GetMeta("SubX") : PlacementCalculator.SubCenter;
-                            int hitSubY = collider.HasMeta("SubY") ? (int)collider.GetMeta("SubY") : PlacementCalculator.SubCenter;
-                            int hitSubZ = collider.HasMeta("SubZ") ? (int)collider.GetMeta("SubZ") : PlacementCalculator.SubCenter;
-
-                            // Décaler d'un cran selon la normale
-                            // Ex: normale +X → on se décale de 1 en X
-                            int newSubX = hitSubX + Mathf.RoundToInt(hitNormal.X);
-                            int newSubY = hitSubY + Mathf.RoundToInt(hitNormal.Y);
-                            int newSubZ = hitSubZ + Mathf.RoundToInt(hitNormal.Z);
-
-                            // Voxel de destination (pour l'instant le même)
-                            _buildingState.SurfaceVoxelX = hitBlockX;
-                            _buildingState.SurfaceVoxelY = hitBlockY;
-                            _buildingState.SurfaceVoxelZ = hitBlockZ;
-
-                            // Si on dépasse la grille 3×3, changer de voxel
-                            // Ex: sub = 4 → sub = 1 du voxel suivant
-                            int voxelOffsetX;
-                            int voxelOffsetY;
-                            int voxelOffsetZ;
-
-                            newSubX = _placementCalculator.ClampSub(newSubX, out voxelOffsetX);
-                            newSubY = _placementCalculator.ClampSub(newSubY, out voxelOffsetY);
-                            newSubZ = _placementCalculator.ClampSub(newSubZ, out voxelOffsetZ);
-
-                            _buildingState.SurfaceVoxelX = hitBlockX + voxelOffsetX;
-                            _buildingState.SurfaceVoxelY = hitBlockY + voxelOffsetY;
-                            _buildingState.SurfaceVoxelZ = hitBlockZ + voxelOffsetZ;
-                            _buildingState.HasFixedSub = true;
-                        }
-                        else
-                        {
-                            // --------------------------------------------------
-                            // BLOC PLEIN — Aller dans le voxel adjacent
-                            // --------------------------------------------------
-                            _buildingState.SurfaceVoxelX = hitBlockX + Mathf.RoundToInt(hitNormal.X);
-                            _buildingState.SurfaceVoxelY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
-                            _buildingState.SurfaceVoxelZ = hitBlockZ + Mathf.RoundToInt(hitNormal.Z);
-                            _buildingState.HasFixedSub = false;
-                        }
-
-                        _buildingState.SurfaceNormalX = hitNormal.X;
-                        _buildingState.SurfaceNormalY = hitNormal.Y;
-                        _buildingState.SurfaceNormalZ = hitNormal.Z;
-                        _buildingState.HasSelectedSurface = true;
-                    }
-                }
-                // ============================================================
-                // CAS 2 : On peut poser (mode normal ou mode fin avec surface)
-                // → On pose le bloc
-                // ============================================================
-                else if (_buildingPreview.CanPlace)
-                {
-                    // Vérifie qu'il y a de la place (ou mode fin = plusieurs blocs possibles)
-                    if (Main.World.GetBlocks(_buildingPreview.NextBlockX, _buildingPreview.NextBlockY, _buildingPreview.NextBlockZ).Count == 0 || _buildingState.IsFineMode)
-                    {
-                        // Crée le bloc avec ses propriétés
-                        var block = new Block{
                             MaterialId = _buildingState.SelectedMaterialId,
                             ShapeId = _buildingState.SelectedShapeId,
                             RotationId = _buildingState.SelectedRotationY,
@@ -282,22 +206,23 @@ public partial class Player : CharacterBody3D
                             SubZ = _buildingPreview.NextSubZ
                         };
 
-                        // Ajoute aux données et crée le visuel
-                        bool success= _buildingController.PlaceBlock(
+                        bool success = _buildingController.PlaceBlock(
                             _buildingPreview.NextBlockX, 
                             _buildingPreview.NextBlockY,
                             _buildingPreview.NextBlockZ,
                             block
                         );
-                        if(success)
+                        
+                        if (success)
                         {
                             var staticBody = BlockRenderer.CreateBlock(
                                 block,
                                 new Vector3(
                                     _buildingPreview.NextBlockX,
                                     _buildingPreview.NextBlockY,
-                                    _buildingPreview.NextBlockZ)
-                                );
+                                    _buildingPreview.NextBlockZ
+                                )
+                            );
                             Main.Instance.AddChild(staticBody);
                         }  
                     }
@@ -340,24 +265,12 @@ public partial class Player : CharacterBody3D
                 Main.UiInHand.SetRotationX(_buildingState.SelectedRotationX);
             }
             // ----------------------------------------------------------------
-            // F — Mode fin / Désélectionner surface
+            // F — Toggle mode fin
             // ----------------------------------------------------------------
             else if (keyEvent.Keycode == Key.F)
             {
-                if (_buildingState.IsFineMode && _buildingState.HasSelectedSurface)
-                {
-                    // Surface sélectionnée → la désélectionner
-                    _buildingState.HasSelectedSurface = false;
-                    _buildingState.HasFixedSub = false;
-                }
-                else
-                {
-                    // Sinon → toggle mode fin
-                    _buildingState.IsFineMode = !_buildingState.IsFineMode;
-                    _buildingState.HasSelectedSurface = false;
-                    _buildingState.HasFixedSub = false;
-                    Main.UiInHand.SetFineMode(_buildingState.IsFineMode);
-                }
+                _buildingState.IsFineMode = !_buildingState.IsFineMode;
+                Main.UiInHand.SetFineMode(_buildingState.IsFineMode);
             }
             // ----------------------------------------------------------------
             // 1, 2, 3 — Sélection du matériau

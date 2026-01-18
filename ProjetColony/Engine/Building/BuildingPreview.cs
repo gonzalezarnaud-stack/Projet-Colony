@@ -12,9 +12,14 @@
 //   3. Met à jour le highlight semi-transparent
 //   4. Stocke les résultats pour que Player puisse les lire au clic
 //
-// DEUX MODES DE FONCTIONNEMENT :
-//   - Mode normal : raycast classique, on vise un bloc existant
-//   - Mode fin avec surface : intersection rayon/plan mathématique
+// DEUX CAS EN MODE FIN :
+//   - Bloc PLEIN visé : calculer sub depuis hitPoint (où on regarde sur la face)
+//   - Bloc STACKABLE visé (poteau) : se coller au bloc existant
+//
+// LOGIQUE POUR BLOCS STACKABLES :
+// Pour chaque axe, on vérifie la TAILLE du bloc visé :
+//   - PETIT (< 1) sur cet axe → décaler le sub, rester dans le même voxel
+//   - GRAND (≥ 1) sur cet axe → aller au voxel adjacent
 //
 // POURQUOI UNE CLASSE SÉPARÉE ?
 // Avant, ce code était dans Player._Process() — des centaines de lignes !
@@ -32,6 +37,7 @@
 using Godot;                            // On importe Godot pour Camera3D, Vector3, CharacterBody3D, etc.
 using ProjetColony.Core.Building;       // On importe Core.Building pour BuildingState et PlacementCalculator
 using ProjetColony.Core.Data;           // On importe Core.Data pour Shapes (constantes des formes)
+using ProjetColony.Core.Data.Registries; // On importe pour ShapeRegistry (vérifier CanStackInVoxel)
 using ProjetColony.Engine.Rendering;    // On importe Engine.Rendering pour BlockHighLight
 
 namespace ProjetColony.Engine.Building;
@@ -53,7 +59,7 @@ public class BuildingPreview
     // CharacterBody3D (pas Node3D) car on a besoin de GetRid()    
     private CharacterBody3D _player;
 
-    // L'état de construction — mode fin ? surface sélectionnée ? forme choisie ?
+    // L'état de construction — mode fin ? forme choisie ?
     private BuildingState _buildingState;
 
     // Le calculateur — méthodes pour convertir fractions en sub, etc.    
@@ -80,6 +86,12 @@ public class BuildingPreview
 
     // True si on peut poser un bloc ici, false sinon
     private bool _canPlace;
+
+    // DEBUG : pour n'afficher qu'une fois par changement de bloc visé ou normale
+    private int _lastLogBlockX = int.MinValue;
+    private int _lastLogBlockY = int.MinValue;
+    private int _lastLogBlockZ = int.MinValue;
+    private Vector3 _lastLogNormal = Vector3.Zero;
     
     // ========================================================================
     // CONFIGURATION
@@ -157,29 +169,29 @@ public class BuildingPreview
     // (la capsule qui l'entoure) au lieu des blocs du monde.
     private Godot.Collections.Dictionary Raycast()
     {
-    // Récupère l'espace physique pour faire des requêtes
-    // DirectSpaceState permet de faire des raycasts manuellement
-    var spaceState = _player.GetWorld3D().DirectSpaceState;
-    
-    // Point de départ = position de la caméra (les yeux du joueur)
-    var from = _camera.GlobalPosition;
-    
-    // Direction = là où regarde la caméra
+        // Récupère l'espace physique pour faire des requêtes
+        // DirectSpaceState permet de faire des raycasts manuellement
+        var spaceState = _player.GetWorld3D().DirectSpaceState;
+        
+        // Point de départ = position de la caméra (les yeux du joueur)
+        var from = _camera.GlobalPosition;
+        
+        // Direction = là où regarde la caméra
         // -Z car en 3D, l'axe Z pointe vers l'ARRIÈRE par convention
-    var direction = -_camera.GlobalTransform.Basis.Z;
-    
-    // Point d'arrivée = départ + direction × portée
-    var to = from + direction * _interactionRange;
-    
-    // Crée les paramètres du raycast (from, to)
-    var query = PhysicsRayQueryParameters3D.Create(from, to);
-    
-    // Exclure le joueur du raycast
-    // GetRid() retourne l'identifiant unique du collider du joueur
-    query.Exclude = new Godot.Collections.Array<Rid> { _player.GetRid() };
-    
-    // Lance le rayon et retourne le résultat
-    return spaceState.IntersectRay(query);
+        var direction = -_camera.GlobalTransform.Basis.Z;
+        
+        // Point d'arrivée = départ + direction × portée
+        var to = from + direction * _interactionRange;
+        
+        // Crée les paramètres du raycast (from, to)
+        var query = PhysicsRayQueryParameters3D.Create(from, to);
+        
+        // Exclure le joueur du raycast
+        // GetRid() retourne l'identifiant unique du collider du joueur
+        query.Exclude = new Godot.Collections.Array<Rid> { _player.GetRid() };
+        
+        // Lance le rayon et retourne le résultat
+        return spaceState.IntersectRay(query);
     }
 
     // ========================================================================
@@ -187,214 +199,368 @@ public class BuildingPreview
     // ========================================================================
     // Appelée par Player._Process() environ 60 fois par seconde.
     //
-    // DEUX CAS DIFFÉRENTS :
-    //
-    // CAS 1 : Mode fin AVEC surface sélectionnée
-    //   → On ne fait PAS de raycast sur les blocs
-    //   → On calcule l'intersection entre le regard et un PLAN mathématique
-    //   → Permet de placer librement sur la surface choisie
-    //
-    // CAS 2 : Mode normal (ou mode fin SANS surface)
-    //   → Raycast classique pour trouver le bloc visé
-    //   → On pose dans le voxel ADJACENT (selon la normale)
-    //
-    // À LA FIN de chaque cas, on :
-    //   1. Remplit _nextBlockX/Y/Z et _nextSubX/Y/Z
-    //   2. Met _canPlace à true ou false
-    //   3. Met à jour le highlight (position + visibilité)
+    // LOGIQUE :
+    // 1. Raycast → trouve le bloc visé et le point exact d'impact
+    // 2. Mode normal → voxel adjacent, Sub = (0, 0, 0)
+    // 3. Mode fin :
+    //    a) Si bloc STACKABLE (poteau) → se coller à lui selon la taille par axe
+    //    b) Sinon (bloc plein) → calculer Sub depuis hitPoint
     public void Update()
     {
-        // ====================================================================
-        // CAS 1 : MODE FIN AVEC SURFACE SÉLECTIONNÉE
-        // ====================================================================
-        // Le joueur a déjà cliqué sur une face pour la sélectionner.
-        // Maintenant, on calcule où sur cette face il regarde.
-        //
-        // POURQUOI PAS UN RAYCAST NORMAL ?
-        // On veut pouvoir placer des blocs même dans le VIDE (au-dessus
-        // de la surface). Un raycast ne toucherait rien. Donc on utilise
-        // une intersection rayon/plan mathématique.
-        if(_buildingState.IsFineMode && _buildingState.HasSelectedSurface)
+        var result = Raycast();
+
+        if (result.Count > 0)
         {
-            // ----------------------------------------------------------------
-            // ÉTAPE 1 : Définir le plan de la surface
-            // ----------------------------------------------------------------
-            // Un plan est défini par :
-            //   - Un point d'origine (planeOrigin)
-            //   - Une direction perpendiculaire (planeNormal)
-            //
-            // La normale est stockée dans BuildingState quand on a cliqué
-            // sur la surface (ex: 0,1,0 = face du dessus).
-            var planeNormal = new Vector3(_buildingState.SurfaceNormalX, _buildingState.SurfaceNormalY, _buildingState.SurfaceNormalZ);
-            
-            // Le centre du voxel où on va poser
-            var voxelCenter = new Vector3(_buildingState.SurfaceVoxelX, _buildingState.SurfaceVoxelY, _buildingState.SurfaceVoxelZ);
-            
-            // Le plan est sur la FACE du voxel, pas au centre
-            // On recule de 0.5 dans la direction de la normale
-            // ASTUCE VECTORIELLE : une seule ligne au lieu de 6 if !
-            var planeOrigin = voxelCenter - planeNormal * PlacementCalculator.HalfVoxel;
-        
-            // ----------------------------------------------------------------
-            // ÉTAPE 2 : Définir le rayon du regard
-            // ----------------------------------------------------------------
-            var rayOrigin = _camera.GlobalPosition;
-            var rayDirection = -_camera.GlobalTransform.Basis.Z;
+            var collider = (Node3D)result["collider"];
+            var hitNormal = (Vector3)result["normal"];
+            var hitPoint = (Vector3)result["position"];
 
-            // ----------------------------------------------------------------
-            // ÉTAPE 3 : Calculer l'intersection rayon/plan
-            // ----------------------------------------------------------------
-            // FORMULE MATHÉMATIQUE :
-            //   t = (planeOrigin - rayOrigin) · normal / (rayDirection · normal)
-            //   hitPoint = rayOrigin + rayDirection × t
-            //
-            // "·" est le PRODUIT SCALAIRE (Dot product) :
-            // Il mesure l'alignement entre deux vecteurs.
-            //   - Si les vecteurs sont parallèles → grand nombre
-            //   - Si perpendiculaires → 0
-            //
-            // "denom" = dénominateur de la formule
-            // Si proche de 0, le rayon est parallèle au plan (pas d'intersection)
-            float denom = planeNormal.Dot(rayDirection);
-            if(Mathf.Abs(denom) > 0.001f)
+            // Position du bloc VISÉ (celui qu'on a touché)
+            var hitBlockX = Mathf.RoundToInt(collider.GlobalPosition.X);
+            var hitBlockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
+            var hitBlockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
+
+            if (_buildingState.IsFineMode)
             {
-                // "t" = distance le long du rayon jusqu'au point d'intersection
-                float t = (planeOrigin - rayOrigin).Dot(planeNormal) / denom;
+                // ============================================================
+                // MODE FIN — Deux cas selon le type de bloc visé
+                // ============================================================
                 
-                // t > 0 signifie que le point est DEVANT nous (pas derrière)
-                if(t > 0)
+                // Récupérer le shapeId du bloc visé via les métadonnées
+                int hitShapeId = collider.HasMeta("ShapeId") 
+                    ? (int)collider.GetMeta("ShapeId") 
+                    : Shapes.Full;
+                
+                // Vérifier si le bloc visé peut contenir plusieurs blocs
+                var hitShapeDef = ShapeRegistry.Get((ushort)hitShapeId);
+                bool hitCanStack = hitShapeDef != null && hitShapeDef.CanStackInVoxel;
+
+                // ============================================================
+                // VÉRIFIER SI LE BLOC À PLACER PEUT TENIR DANS LA SOUS-GRILLE
+                // ============================================================
+                // Si le bloc à placer est GRAND (≥ 1) sur un axe NON-NORMAL,
+                // il va chevaucher le bloc visé. Dans ce cas, on doit aller
+                // au voxel adjacent au lieu de rester dans le même voxel.
+                //
+                // Exemple : poteau vertical (0.33 × 1.0 × 0.33) visé sur face +X
+                // pour placer un poteau horizontal (0.33 × 0.33 × 1.0 après rotation).
+                // Le poteau horizontal est grand sur Z, donc il ne peut pas
+                // coexister avec le poteau vertical dans le même voxel.
+                
+                var selectedShapeDef = ShapeRegistry.Get(_buildingState.SelectedShapeId);
+                float placeSizeX = selectedShapeDef != null ? selectedShapeDef.SizeX : 1.0f;
+                float placeSizeY = selectedShapeDef != null ? selectedShapeDef.SizeY : 1.0f;
+                float placeSizeZ = selectedShapeDef != null ? selectedShapeDef.SizeZ : 1.0f;
+
+                // Appliquer la rotation au bloc à placer
+                // RotX d'abord (sur axes locaux)
+                if (_buildingState.SelectedRotationX == 1 || _buildingState.SelectedRotationX == 3)
                 {
-                    // Le point exact où le regard touche le plan
-                    var hitPoint = rayOrigin + rayDirection * t;
+                    float temp = placeSizeY;
+                    placeSizeY = placeSizeZ;
+                    placeSizeZ = temp;
+                }
+                // Puis RotY (sur axes monde)
+                if (_buildingState.SelectedRotationY == 1 || _buildingState.SelectedRotationY == 3)
+                {
+                    float temp = placeSizeX;
+                    placeSizeX = placeSizeZ;
+                    placeSizeZ = temp;
+                }
 
-                    // --------------------------------------------------------
-                    // ÉTAPE 4 : Convertir en sous-position (1, 2, ou 3)
-                    // --------------------------------------------------------
-                    // fracX/Y/Z = position relative dans le voxel (0 à 1)
-                    // On soustrait le coin bas-arrière-gauche du voxel
-                    float fracX = hitPoint.X - (voxelCenter.X - PlacementCalculator.HalfVoxel);
-                    float fracY = hitPoint.Y - (voxelCenter.Y - PlacementCalculator.HalfVoxel);
-                    float fracZ = hitPoint.Z - (voxelCenter.Z - PlacementCalculator.HalfVoxel);
+                // Vérifier si le bloc à placer est grand sur un axe non-normal
+                // (utilisé plus tard pour ajuster le sub)
+                bool placeIsLargeOnX = placeSizeX >= 1.0f;
+                bool placeIsLargeOnY = placeSizeY >= 1.0f;
+                bool placeIsLargeOnZ = placeSizeZ >= 1.0f;
 
-                    // Convertit fraction (0-1) en sub (1, 2, 3)
+                if (hitCanStack)
+                {
+                    // --------------------------------------------------------
+                    // CAS A : BLOC STACKABLE — Partir du sub du bloc visé
+                    // --------------------------------------------------------
+                    // On récupère la sous-position du bloc visé et on décale
+                    // selon la normale. ClampSub gère le changement de voxel
+                    // si on dépasse la grille 3×3×3.
+                    //
+                    // Si le bloc à PLACER est grand sur un axe, il ne peut pas
+                    // utiliser la sous-grille sur cet axe → on force le voxel
+                    // adjacent sur cet axe.
+                    
+                    // Récupérer le sub du bloc visé
+                    int hitSubX = collider.HasMeta("SubX") 
+                        ? (int)collider.GetMeta("SubX") 
+                        : PlacementCalculator.SubCenter;
+                    int hitSubY = collider.HasMeta("SubY") 
+                        ? (int)collider.GetMeta("SubY") 
+                        : PlacementCalculator.SubCenter;
+                    int hitSubZ = collider.HasMeta("SubZ") 
+                        ? (int)collider.GetMeta("SubZ") 
+                        : PlacementCalculator.SubCenter;
+
+                    // CORRECTION : Si Sub = 0 (SubNone, bloc posé en mode normal),
+                    // le bloc est visuellement centré → utiliser SubCenter (2)
+                    if (hitSubX == PlacementCalculator.SubNone) 
+                        hitSubX = PlacementCalculator.SubCenter;
+                    if (hitSubY == PlacementCalculator.SubNone) 
+                        hitSubY = PlacementCalculator.SubCenter;
+                    if (hitSubZ == PlacementCalculator.SubNone) 
+                        hitSubZ = PlacementCalculator.SubCenter;
+
+                    // Dimensions du bloc visé (APRÈS rotation)
+                    float sizeX = hitShapeDef.SizeX;
+                    float sizeY = hitShapeDef.SizeY;
+                    float sizeZ = hitShapeDef.SizeZ;
+
+                    // Récupérer la rotation du bloc visé
+                    int hitRotY = collider.HasMeta("RotationY") 
+                        ? (int)collider.GetMeta("RotationY") 
+                        : 0;
+                    int hitRotX = collider.HasMeta("RotationX") 
+                        ? (int)collider.GetMeta("RotationX") 
+                        : 0;
+
+                    // Appliquer la rotation aux dimensions du bloc visé
+                    // RotX d'abord (sur axes locaux)
+                    if (hitRotX == 1 || hitRotX == 3)
+                    {
+                        float temp = sizeY;
+                        sizeY = sizeZ;
+                        sizeZ = temp;
+                    }
+                    // Puis RotY (sur axes monde)
+                    if (hitRotY == 1 || hitRotY == 3)
+                    {
+                        float temp = sizeX;
+                        sizeX = sizeZ;
+                        sizeZ = temp;
+                    }
+
+                    // DEBUG temporaire (seulement quand bloc visé ou normale change)
+                    if (hitBlockX != _lastLogBlockX || hitBlockY != _lastLogBlockY || hitBlockZ != _lastLogBlockZ || hitNormal != _lastLogNormal)
+                    {
+                        GD.Print($"[DEBUG CAS A] hitNormal={hitNormal}, hitRot=(Y:{hitRotY}, X:{hitRotX})");
+                        GD.Print($"[DEBUG CAS A] hitSize (après rot)=({sizeX}, {sizeY}, {sizeZ})");
+                        GD.Print($"[DEBUG CAS A] placeSize (après rot)=({placeSizeX}, {placeSizeY}, {placeSizeZ})");
+                        _lastLogBlockX = hitBlockX;
+                        _lastLogBlockY = hitBlockY;
+                        _lastLogBlockZ = hitBlockZ;
+                        _lastLogNormal = hitNormal;
+                    }
+
+                    // Initialiser destination = bloc visé
+                    _nextBlockX = hitBlockX;
+                    _nextBlockY = hitBlockY;
+                    _nextBlockZ = hitBlockZ;
+
+                    int newSubX = hitSubX;
+                    int newSubY = hitSubY;
+                    int newSubZ = hitSubZ;
+
+                    // ----------------------------------------------------
+                    // AXE X : Si la normale pointe vers +X ou -X
+                    // ----------------------------------------------------
+                    if (Mathf.Abs(hitNormal.X) > 0.5f)
+                    {
+                        if (sizeX >= 1.0f)
+                        {
+                            // Grand sur X → aller au voxel adjacent
+                            _nextBlockX += Mathf.RoundToInt(hitNormal.X);
+                            // Se coller au bord du nouveau voxel
+                            newSubX = _placementCalculator.FixSubForNormal(hitNormal.X, PlacementCalculator.SubCenter);
+                        }
+                        else
+                        {
+                            // Petit sur X → décaler le sub dans le même voxel
+                            newSubX = hitSubX + Mathf.RoundToInt(hitNormal.X);
+                        }
+                    }
+
+                    // ----------------------------------------------------
+                    // AXE Y : Si la normale pointe vers +Y ou -Y
+                    // ----------------------------------------------------
+                    if (Mathf.Abs(hitNormal.Y) > 0.5f)
+                    {
+                        if (sizeY >= 1.0f)
+                        {
+                            // Grand sur Y → aller au voxel adjacent (dessus/dessous)
+                            _nextBlockY += Mathf.RoundToInt(hitNormal.Y);
+                            // Se coller au bord du nouveau voxel
+                            newSubY = _placementCalculator.FixSubForNormal(hitNormal.Y, PlacementCalculator.SubCenter);
+                        }
+                        else
+                        {
+                            // Petit sur Y → décaler le sub dans le même voxel
+                            newSubY = hitSubY + Mathf.RoundToInt(hitNormal.Y);
+                        }
+                    }
+
+                    // ----------------------------------------------------
+                    // AXE Z : Si la normale pointe vers +Z ou -Z
+                    // ----------------------------------------------------
+                    if (Mathf.Abs(hitNormal.Z) > 0.5f)
+                    {
+                        if (sizeZ >= 1.0f)
+                        {
+                            // Grand sur Z → aller au voxel adjacent
+                            _nextBlockZ += Mathf.RoundToInt(hitNormal.Z);
+                            // Se coller au bord du nouveau voxel
+                            newSubZ = _placementCalculator.FixSubForNormal(hitNormal.Z, PlacementCalculator.SubCenter);
+                        }
+                        else
+                        {
+                            // Petit sur Z → décaler le sub dans le même voxel
+                            newSubZ = hitSubZ + Mathf.RoundToInt(hitNormal.Z);
+                        }
+                    }
+
+                    // ----------------------------------------------------
+                    // AXES NON-NORMAUX : Calculer depuis hitPoint
+                    // ----------------------------------------------------
+                    // Pour les axes où la normale ne pointe PAS, on calcule
+                    // le sub depuis hitPoint (où l'utilisateur regarde).
+                    // Cela permet de placer librement sur la face (haut/milieu/bas).
+                    //
+                    // On ne garde PAS le sub du bloc visé car :
+                    // 1. On veut un placement libre selon où on regarde
+                    // 2. Le nouveau bloc doit se centrer, pas hériter du sub
+                    //
+                    // Note : on utilise _nextBlockX/Y/Z car il peut avoir changé
+                    // si on est allé au voxel adjacent sur l'axe de la normale.
+                    
+                    // Axe X : si la normale NE pointe PAS vers X
+                    if (Mathf.Abs(hitNormal.X) < 0.5f)
+                    {
+                        float fracX = hitPoint.X - (_nextBlockX - PlacementCalculator.HalfVoxel);
+                        newSubX = _placementCalculator.CalculateSub(fracX);
+                    }
+                    
+                    // Axe Y : si la normale NE pointe PAS vers Y
+                    if (Mathf.Abs(hitNormal.Y) < 0.5f)
+                    {
+                        float fracY = hitPoint.Y - (_nextBlockY - PlacementCalculator.HalfVoxel);
+                        newSubY = _placementCalculator.CalculateSub(fracY);
+                    }
+                    
+                    // Axe Z : si la normale NE pointe PAS vers Z
+                    if (Mathf.Abs(hitNormal.Z) < 0.5f)
+                    {
+                        float fracZ = hitPoint.Z - (_nextBlockZ - PlacementCalculator.HalfVoxel);
+                        newSubZ = _placementCalculator.CalculateSub(fracZ);
+                    }
+
+                    // ----------------------------------------------------
+                    // GÉRER LE DÉBORDEMENT D'ABORD
+                    // ----------------------------------------------------
+                    // Si sub = 0 ou sub = 4 après le décalage, on a débordé
+                    // du voxel → passer au voxel adjacent.
+                    //
+                    // IMPORTANT : On fait ça AVANT de forcer SubNone, sinon
+                    // un sub=0 (débordement) serait confondu avec SubNone=0.
+                    int voxelOffsetX = 0, voxelOffsetY = 0, voxelOffsetZ = 0;
+                    
+                    // ClampSub gère : sub<1 → voxel précédent, sub>3 → voxel suivant
+                    newSubX = _placementCalculator.ClampSub(newSubX, out voxelOffsetX);
+                    newSubY = _placementCalculator.ClampSub(newSubY, out voxelOffsetY);
+                    newSubZ = _placementCalculator.ClampSub(newSubZ, out voxelOffsetZ);
+
+                    _nextBlockX += voxelOffsetX;
+                    _nextBlockY += voxelOffsetY;
+                    _nextBlockZ += voxelOffsetZ;
+
+                    // ----------------------------------------------------
+                    // VÉRIFIER LE BLOC À PLACER
+                    // ----------------------------------------------------
+                    // Si le bloc à placer est grand sur un axe, le sub
+                    // n'a pas de sens sur cet axe → forcer SubNone.
+                    // On fait ça APRÈS le ClampSub pour ne pas confondre
+                    // un débordement (sub=0) avec "pas de sous-grille".
+                    if (placeSizeX >= 1.0f) newSubX = PlacementCalculator.SubNone;
+                    if (placeSizeY >= 1.0f) newSubY = PlacementCalculator.SubNone;
+                    if (placeSizeZ >= 1.0f) newSubZ = PlacementCalculator.SubNone;
+
+                    _nextSubX = (byte)newSubX;
+                    _nextSubY = (byte)newSubY;
+                    _nextSubZ = (byte)newSubZ;
+                }
+                else
+                {
+                    // --------------------------------------------------------
+                    // CAS B : BLOC PLEIN — Calculer Sub depuis hitPoint
+                    // --------------------------------------------------------
+                    // Le voxel destination est adjacent au bloc visé.
+                    // On calcule où on regarde sur la face pour déterminer le sub.
+                    
+                    _nextBlockX = hitBlockX + Mathf.RoundToInt(hitNormal.X);
+                    _nextBlockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
+                    _nextBlockZ = hitBlockZ + Mathf.RoundToInt(hitNormal.Z);
+
+                    var destCenter = new Vector3(_nextBlockX, _nextBlockY, _nextBlockZ);
+                    
+                    float fracX = hitPoint.X - (destCenter.X - PlacementCalculator.HalfVoxel);
+                    float fracY = hitPoint.Y - (destCenter.Y - PlacementCalculator.HalfVoxel);
+                    float fracZ = hitPoint.Z - (destCenter.Z - PlacementCalculator.HalfVoxel);
+
                     int subX = _placementCalculator.CalculateSub(fracX);
                     int subY = _placementCalculator.CalculateSub(fracY);
                     int subZ = _placementCalculator.CalculateSub(fracZ);
 
-                    // --------------------------------------------------------
-                    // ÉTAPE 5 : Ajuster selon HasFixedSub ou la normale
-                    // --------------------------------------------------------
-                    if (_buildingState.HasFixedSub)
-                    {
-                        // On a cliqué sur un bloc stackable (poteau)
-                        // → Utiliser le sub pré-calculé pour se coller à lui
-                        subX = _buildingState.FixedSubX;
-                        subY = _buildingState.FixedSubY;
-                        subZ = _buildingState.FixedSubZ;
-                    }
-                    else
-                    {
-                        // On a cliqué sur un bloc plein
-                        // → Se coller contre la surface (fixer l'axe de la normale)
-                        subX = _placementCalculator.FixSubForNormal(_buildingState.SurfaceNormalX, subX);
-                        subY = _placementCalculator.FixSubForNormal(_buildingState.SurfaceNormalY, subY);
-                        subZ = _placementCalculator.FixSubForNormal(_buildingState.SurfaceNormalZ, subZ);
-                    }
+                    // Fixer le sub sur l'axe de la normale pour se coller au bloc
+                    subX = _placementCalculator.FixSubForNormal(hitNormal.X, subX);
+                    subY = _placementCalculator.FixSubForNormal(hitNormal.Y, subY);
+                    subZ = _placementCalculator.FixSubForNormal(hitNormal.Z, subZ);
 
-                    // --------------------------------------------------------
-                    // ÉTAPE 6 : Stocker les résultats
-                    // --------------------------------------------------------
-                    _nextBlockX = _buildingState.SurfaceVoxelX;
-                    _nextBlockY = _buildingState.SurfaceVoxelY;
-                    _nextBlockZ = _buildingState.SurfaceVoxelZ;
+                    // Si le bloc à placer est grand sur un axe, pas de sous-grille
+                    // sur cet axe (le bloc occupera tout le voxel).
+                    if (placeSizeX >= 1.0f) subX = PlacementCalculator.SubNone;
+                    if (placeSizeY >= 1.0f) subY = PlacementCalculator.SubNone;
+                    if (placeSizeZ >= 1.0f) subZ = PlacementCalculator.SubNone;
 
                     _nextSubX = (byte)subX;
                     _nextSubY = (byte)subY;
                     _nextSubZ = (byte)subZ;
-
-                    _canPlace = true;
-
-                    // Met à jour le highlight avec la forme/rotation sélectionnées
-                    _blockHighLight.UpdateHighLight(
-                        _buildingState.SelectedShapeId,
-                        _buildingState.SelectedRotationY,
-                        _buildingState.SelectedRotationX,
-                        new Vector3(_nextBlockX, _nextBlockY, _nextBlockZ)
-                    );
-                }
-                else
-                {
-                    // t <= 0 : le plan est DERRIÈRE nous
-                    _canPlace = false;
-                    _blockHighLight.UpdateHighLight(Shapes.Full, 0, 0, null);
                 }
             }
             else
             {
-                // Rayon parallèle au plan (pas d'intersection possible)
-                _canPlace = false;
-                _blockHighLight.UpdateHighLight(Shapes.Full, 0, 0, null);
-            }
-        }
-
-        // ====================================================================
-        // CAS 2 : MODE NORMAL (ou mode fin sans surface sélectionnée)
-        // ====================================================================
-        // Raycast classique : on cherche quel bloc le joueur regarde,
-        // puis on calcule la position du voxel ADJACENT.
-        else
-        {
-            // Lance le raycast
-            var result = Raycast();
-
-            if(result.Count > 0)
-            {
-                // On a touché quelque chose !
-                
-                // Le collider touché (le StaticBody3D du bloc)
-                var collider = (Node3D)result["collider"];
-
-                // La normale de la face touchée (direction perpendiculaire)
-                // Ex: (0, 1, 0) = face du dessus, (1, 0, 0) = face droite
-                var hitNormal = (Vector3)result["normal"];
-
-                // Position du bloc VISÉ (celui qu'on a touché)
-                // RoundToInt car la position peut avoir des décimales
-                var hitBlockX = Mathf.RoundToInt(collider.GlobalPosition.X);
-                var hitBlockY = Mathf.RoundToInt(collider.GlobalPosition.Y);
-                var hitBlockZ = Mathf.RoundToInt(collider.GlobalPosition.Z);
-
-                // Position du voxel ADJACENT (où on va poser)
-                // On ajoute la normale pour aller dans le voxel d'à côté
-                // Ex: bloc visé (5, 10, 3), normale (0, 1, 0) → poser en (5, 11, 3)
+                // ============================================================
+                // MODE NORMAL — Pas de sous-position
+                // ============================================================
                 _nextBlockX = hitBlockX + Mathf.RoundToInt(hitNormal.X);
                 _nextBlockY = hitBlockY + Mathf.RoundToInt(hitNormal.Y);
                 _nextBlockZ = hitBlockZ + Mathf.RoundToInt(hitNormal.Z);
 
-                // Pas de sous-position en mode normal (bloc centré)
-                // SubNone = 0, signifie "pas de sous-grille"
                 _nextSubX = (byte)PlacementCalculator.SubNone;
                 _nextSubY = (byte)PlacementCalculator.SubNone;
                 _nextSubZ = (byte)PlacementCalculator.SubNone;
-
-                _canPlace = true;
-
-                // Affiche le highlight à la position calculée
-                _blockHighLight.UpdateHighLight(
-                    _buildingState.SelectedShapeId,
-                    _buildingState.SelectedRotationY,
-                    _buildingState.SelectedRotationX,
-                    new Vector3(_nextBlockX, _nextBlockY, _nextBlockZ)
-                );
             }
-            else
-            {
-                // Le raycast n'a rien touché (on regarde le ciel, trop loin, etc.)
-                _canPlace = false;
 
-                // Cache le highlight en passant null comme position
-                _blockHighLight.UpdateHighLight(Shapes.Full, 0, 0, null);
-            }
+            _canPlace = true;
+
+            _blockHighLight.UpdateHighLight(
+                _buildingState.SelectedShapeId,
+                _buildingState.SelectedRotationY,
+                _buildingState.SelectedRotationX,
+                new Vector3(_nextBlockX, _nextBlockY, _nextBlockZ),
+                _nextSubX,
+                _nextSubY,
+                _nextSubZ
+            );
         }
+        else
+        {
+            _canPlace = false;
+            _blockHighLight.UpdateHighLight(Shapes.Full, 0, 0, null, 0, 0, 0);
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // TOSTRING — Affiche l'état du calcul de preview pour le débogage
+    // ------------------------------------------------------------------------
+    public override string ToString()
+    {
+        return $"BuildingPreview(CanPlace:{_canPlace} " +
+               $"Block:({_nextBlockX},{_nextBlockY},{_nextBlockZ}) " +
+               $"Sub:({_nextSubX},{_nextSubY},{_nextSubZ}))";
     }
 }

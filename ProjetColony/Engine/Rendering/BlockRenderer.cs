@@ -120,17 +120,19 @@ public static class BlockRenderer
             GD.Print("Sub:" + block.SubX + "," + block.SubY + "," + block.SubZ);
 
             // Offset seulement si petit sur cet axe ET sub != 0
+            // Spacing = (1 - taille_poteau) / 2 = (1 - 0.33) / 2 = 0.335
+            // Cela garantit que les poteaux se touchent parfaitement aux bords des voxels
             if (block.SubX != 0 && sizeX < 1)
             {
-                offsetX = (block.SubX - 2f) * 0.33f;
+                offsetX = (block.SubX - 2f) * 0.335f;
             }
             if (block.SubY != 0 && sizeY < 1)
             {
-                offsetY = (block.SubY - 2f) * 0.33f;
+                offsetY = (block.SubY - 2f) * 0.335f;
             }
             if (block.SubZ != 0 && sizeZ < 1)
             {
-                offsetZ = (block.SubZ - 2f) * 0.33f;
+                offsetZ = (block.SubZ - 2f) * 0.335f;
             }
             GD.Print("RENDERER - offset:" + offsetX + "," + offsetY + "," + offsetZ);
         }
@@ -290,12 +292,17 @@ public static class BlockRenderer
         // --------------------------------------------------------------------
         // MÉTADONNÉES — Stockage des infos du bloc pour le raycast
         // --------------------------------------------------------------------
-        // On sauvegarde SubX/Y/Z et ShapeId dans le StaticBody.
+        // On sauvegarde SubX/Y/Z, ShapeId et les rotations dans le StaticBody.
         // Cela permet au raycast de récupérer ces infos quand on vise un bloc.
         //
         // Utilité en mode fin :
         // Quand on vise un poteau à SubX=2, on veut poser le suivant à SubX=3.
         // Sans ces métadonnées, on ne saurait pas où est le bloc visé.
+        //
+        // IMPORTANT : RotationY et RotationX sont nécessaires pour calculer
+        // les dimensions effectives du bloc visé (après rotation).
+        // Ex: un poteau vertical (0.33×1×0.33) tourné horizontalement
+        // devient (0.33×0.33×1) — grand en Z au lieu de Y.
         //
         // SetMeta(clé, valeur) stocke une donnée arbitraire dans un Node.
         // GetMeta(clé) la récupère plus tard.
@@ -303,6 +310,8 @@ public static class BlockRenderer
         staticBody.SetMeta("SubY", (int)block.SubY);
         staticBody.SetMeta("SubZ", (int)block.SubZ);
         staticBody.SetMeta("ShapeId", (int)block.ShapeId);
+        staticBody.SetMeta("RotationY", (int)block.RotationId);
+        staticBody.SetMeta("RotationX", (int)block.RotationX);
 
         return staticBody;
     }
@@ -380,7 +389,7 @@ public static class BlockRenderer
     //
     // La pente descend de l'arrière (Z = -0.5) vers l'avant (Z = +0.5).
     // ========================================================================
-private static Mesh CreateSlopeMesh(float height)
+    private static Mesh CreateSlopeMesh(float height)
     {
         float topY = -0.5f + height;
         

@@ -73,4 +73,14 @@ public struct Block
     public byte SubX;
     public byte SubY;
     public byte SubZ;
+
+    // ------------------------------------------------------------------------
+    // TOSTRING — Affiche les propriétés du bloc pour le débogage
+    // ------------------------------------------------------------------------
+    public override string ToString()
+    {
+        return $"Block(Mat:{MaterialId} Shape:{ShapeId} " +
+               $"RotY:{RotationId} RotX:{RotationX} " +
+               $"Sub:({SubX},{SubY},{SubZ}))";
+    }
 }

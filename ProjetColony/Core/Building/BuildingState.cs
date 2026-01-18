@@ -41,13 +41,7 @@ public class BuildingState
     // IsFineMode :
     //   false = mode normal (un bloc = un voxel entier)
     //   true = mode fin (sous-grille 3×3×3, placement précis)
-    //
-    // HasSelectedSurface :
-    //   En mode fin, on doit d'abord cliquer sur une face pour la sélectionner.
-    //   false = pas encore de surface sélectionnée
-    //   true = surface sélectionnée, on peut placer des blocs dessus
     public bool IsFineMode;
-    public bool HasSelectedSurface;
 
     // ------------------------------------------------------------------------
     // BLOC EN MAIN
@@ -65,44 +59,6 @@ public class BuildingState
     public ushort SelectedShapeId;
     public ushort SelectedRotationY;
     public ushort SelectedRotationX;
-
-    // ------------------------------------------------------------------------
-    // SURFACE DE TRAVAIL (mode fin uniquement)
-    // ------------------------------------------------------------------------
-    // Quand on clique sur une face en mode fin, on "verrouille" cette surface.
-    // Le highlight se déplace alors en 2D sur cette surface.
-    //
-    // SurfaceVoxelX/Y/Z : le voxel OÙ ON VA POSER (pas celui qu'on a cliqué)
-    // SurfaceNormalX/Y/Z : la direction de la face (ex: 0,1,0 = face du dessus)
-    //
-    // Exemple : tu cliques sur le dessus d'un bloc à (5, 10, 3)
-    //   → SurfaceVoxel = (5, 11, 3)  ← le voxel AU-DESSUS
-    //   → SurfaceNormal = (0, 1, 0) ← direction "vers le haut"
-    public int SurfaceVoxelX;
-    public int SurfaceVoxelY;
-    public int SurfaceVoxelZ;
-
-    public float SurfaceNormalX;
-    public float SurfaceNormalY;
-    public float SurfaceNormalZ;
-
-    // ------------------------------------------------------------------------
-    // SUB FIXÉ (clic sur un poteau)
-    // ------------------------------------------------------------------------
-    // Quand on clique sur un poteau (bloc stackable), on veut se COLLER à lui,
-    // pas aller au bord du voxel.
-    //
-    // Exemple : poteau en sub (2, 2, 2), on clique sur sa face droite (+X)
-    //   → Le nouveau bloc doit aller en sub (3, 2, 2), collé au poteau
-    //   → On stocke ça dans FixedSubX/Y/Z
-    //
-    // HasFixedSub :
-    //   false = on a cliqué sur un bloc plein, pas de sub fixé
-    //   true = on a cliqué sur un poteau, utiliser FixedSubX/Y/Z
-    public int FixedSubX;
-    public int FixedSubY;
-    public int FixedSubZ;
-    public bool HasFixedSub;
 
     // ------------------------------------------------------------------------
     // CONSTRUCTEUR — Appelé quand on fait "new BuildingState()"
@@ -149,11 +105,23 @@ public class BuildingState
     public void Reset()
     {
         IsFineMode = false;
-        HasSelectedSurface = false;
         SelectedMaterialId = 1;
         SelectedShapeId = 0;
         SelectedRotationY = 0;
         SelectedRotationX = 0;
-        HasFixedSub = false;
+    }
+
+    // ------------------------------------------------------------------------
+    // TOSTRING — Affiche l'état complet pour le débogage
+    // ------------------------------------------------------------------------
+    // Permet de voir tout l'état d'un coup dans la console.
+    //
+    // EXEMPLE D'UTILISATION :
+    //   GD.Print(_buildingState);  // Appelle automatiquement ToString()
+    public override string ToString()
+    {
+        return $"BuildingState(FineMode:{IsFineMode} " +
+               $"Material:{SelectedMaterialId} Shape:{SelectedShapeId} " +
+               $"RotY:{SelectedRotationY} RotX:{SelectedRotationX})";
     }
 }
